@@ -1,0 +1,408 @@
+package com.example.livetv.data.network
+
+import android.content.Context
+import android.util.Log
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.SslErrorHandler
+import android.net.http.SslError
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import com.example.livetv.data.model.Match
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
+import org.jsoup.Jsoup
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import okhttp3.OkHttpClient
+import okhttp3.Request
+
+class Scraper(private val context: Context) {
+
+    /**
+     * Scrapes the main page to get a list of all upcoming matches, but doesn't
+     * fetch the stream links yet. This is designed to be fast.
+     */
+    suspend fun scrapeMatchList(): List<Match> = withContext(Dispatchers.IO) {
+        val url = "https://livetv.sx/enx/allupcomingsports/1/"
+        Log.d("Scraper", "Fetching initial match list from: $url")
+        
+        try {
+            // Try the mobile version of the site which might be less complex
+            val mobileUrl = "https://livetv.sx/enx/allupcomingsports/1/"
+            val html = fetchHtmlWithOkHttp(mobileUrl)
+            
+            val doc = Jsoup.parse(html)
+            val matches = mutableListOf<Match>()
+
+            // Try multiple selectors to find match links
+            var detailLinks = doc.select("a[href*='/enx/event/']")
+            Log.d("Scraper", "Found ${detailLinks.size} links with '/enx/event/' pattern")
+            
+            if (detailLinks.isEmpty()) {
+                detailLinks = doc.select("a[href*='/event/']")
+                Log.d("Scraper", "Found ${detailLinks.size} links with '/event/' pattern")
+            }
+            
+            if (detailLinks.isEmpty()) {
+                detailLinks = doc.select("a[href*='event']")
+                Log.d("Scraper", "Found ${detailLinks.size} links containing 'event'")
+            }
+            
+            // Let's also check what links we do have
+            val allLinks = doc.select("a[href]")
+            Log.d("Scraper", "Total links found on page: ${allLinks.size}")
+            
+            if (allLinks.isNotEmpty() && detailLinks.isEmpty()) {
+                Log.d("Scraper", "Sample of first 10 links found:")
+                allLinks.take(10).forEach { link ->
+                    Log.d("Scraper", "Link: ${link.attr("href")} - Text: ${link.text().take(50)}")
+                }
+            }
+            
+            if (detailLinks.isEmpty()) {
+                // Check for tables or other structures that might contain matches
+                val tables = doc.select("table")
+                Log.d("Scraper", "Found ${tables.size} tables on the page")
+                
+                val divs = doc.select("div")
+                Log.d("Scraper", "Found ${divs.size} div elements")
+                
+                // Look for any elements that might contain match information
+                val matchKeywords = doc.select(":contains(vs), :contains(VS), :contains(-), :contains(football), :contains(match)")
+                Log.d("Scraper", "Found ${matchKeywords.size} elements containing match-related keywords")
+                
+                Log.d("Scraper", "Page title: ${doc.title()}")
+                Log.d("Scraper", "Page body text (first 500 chars): ${doc.body().text().take(500)}")
+            }
+
+            // Process the links we found
+            for (link in detailLinks) {
+                val href = link.attr("href")
+                if (href.isBlank()) continue
+                
+                val detailPageUrl = if (href.startsWith("http")) {
+                    href
+                } else if (href.startsWith("/")) {
+                    "https://livetv.sx$href"
+                } else {
+                    "https://livetv.sx/$href"
+                }
+                
+                Log.d("Scraper", "Processing link: $detailPageUrl")
+                
+                // Try to find the match information in various ways
+                var row = link.closest("tr")
+                if (row == null) row = link.parent()
+                if (row == null) row = link
+                
+                var time = ""
+                var teams = ""
+                var competition = ""
+                
+                // Try different selectors for match information
+                if (row != null) {
+                    time = row.select("td.time, .time, [class*='time']").text()
+                    teams = row.select("td.evdesc, .evdesc, .event-title, [class*='event'], [class*='team']").text()
+                    competition = row.select("td.league > a, .league, .competition, [class*='league']").text()
+                }
+                
+                // If we couldn't find team info in the row, try the link text itself
+                if (teams.isBlank()) {
+                    teams = link.text().trim()
+                }
+                
+                // If we still don't have team info, try the parent elements
+                if (teams.isBlank() && link.parent() != null) {
+                    teams = link.parent()!!.text().trim()
+                }
+                
+                Log.d("Scraper", "Match found - Time: '$time', Teams: '$teams', Competition: '$competition'")
+                
+                if (teams.isNotBlank() && teams.length > 3) { // Basic validation
+                    matches.add(Match(time, teams, competition, detailPageUrl))
+                }
+            }
+            
+            // Remove duplicates based on URL to avoid LazyColumn key conflicts
+            val uniqueMatches = matches.distinctBy { it.detailPageUrl }
+            
+            Log.d("Scraper", "Successfully parsed ${matches.size} matches from main page.")
+            if (matches.size != uniqueMatches.size) {
+                Log.d("Scraper", "Removed ${matches.size - uniqueMatches.size} duplicate matches. Final count: ${uniqueMatches.size}")
+            }
+            uniqueMatches
+        } catch (e: Exception) {
+            Log.e("Scraper", "Error scraping match list", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Scrapes a single match detail page to find all available stream links.
+     * Detects multiple stream types: Acestream, M3U8, RTMP, YouTube, Twitch, and other HTTP streams.
+     */
+    suspend fun fetchStreamLinks(detailPageUrl: String): List<String> = withContext(Dispatchers.IO) {
+        Log.d("Scraper", "Fetching stream links from: $detailPageUrl")
+        
+        try {
+            val html = fetchHtmlWithOkHttp(detailPageUrl)
+            val doc = Jsoup.parse(html)
+            val links = mutableSetOf<String>()
+
+            // 1. Acestream links (P2P streaming)
+            val acestreamLinks = doc.select("a[href*='acestream://']").map { it.attr("href") }
+            links.addAll(acestreamLinks)
+            Log.d("Scraper", "Found ${acestreamLinks.size} Acestream links")
+
+            // 2. M3U8 HLS streams (HTTP Live Streaming)
+            val m3u8Links = doc.select("a[href*='.m3u8']").map { it.attr("href") }
+            links.addAll(m3u8Links)
+            
+            // 3. RTMP streams (Real-Time Messaging Protocol)
+            val rtmpLinks = doc.select("a[href^='rtmp://'], a[href^='rtmps://']").map { it.attr("href") }
+            links.addAll(rtmpLinks)
+
+            // 4. YouTube live streams
+            val youtubeLinks = doc.select("a[href*='youtube.com/watch'], a[href*='youtu.be/']").map { it.attr("href") }
+            links.addAll(youtubeLinks)
+
+            // 5. Twitch streams
+            val twitchLinks = doc.select("a[href*='twitch.tv/']").map { it.attr("href") }
+            links.addAll(twitchLinks)
+
+            // 6. Generic HTTP/HTTPS streaming links
+            val broadcastTables = doc.select("table.broadcasts, table[width='100%'][cellspacing='1'][cellpadding='3']")
+            val httpLinks = broadcastTables.select("a[href^=http]")
+                .map { it.attr("href") }
+                .filter { url ->
+                    // Filter for likely streaming URLs
+                    url.contains("stream", ignoreCase = true) ||
+                    url.contains("live", ignoreCase = true) ||
+                    url.contains("watch", ignoreCase = true) ||
+                    url.contains(".ts") ||
+                    url.contains(".flv") ||
+                    url.contains(".mp4") ||
+                    url.contains("player")
+                }
+            links.addAll(httpLinks)
+
+            // 7. Links in JavaScript or embedded content
+            val scriptTags = doc.select("script")
+            scriptTags.forEach { script ->
+                val scriptContent = script.html()
+                
+                // Extract URLs from JavaScript
+                val urlRegex = """https?://[^\s"'<>]+(?:\.m3u8|stream|live|watch|player)""".toRegex(RegexOption.IGNORE_CASE)
+                val jsUrls = urlRegex.findAll(scriptContent).map { it.value }.toList()
+                links.addAll(jsUrls)
+            }
+
+            // 8. Iframe sources (embedded players)
+            val iframeLinks = doc.select("iframe[src]").map { it.attr("src") }
+                .filter { url ->
+                    url.isNotBlank() && (
+                        url.contains("stream", ignoreCase = true) ||
+                        url.contains("live", ignoreCase = true) ||
+                        url.contains("player", ignoreCase = true) ||
+                        url.contains("embed", ignoreCase = true)
+                    )
+                }
+            links.addAll(iframeLinks)
+
+            // 9. Fallback regex search in the HTML text for various stream protocols
+            if (links.isEmpty()) {
+                val bodyText = doc.body().text()
+                
+                // Acestream regex
+                val acestreamRegex = "acestream://[a-zA-Z0-9]+".toRegex()
+                val foundAcestream = acestreamRegex.findAll(bodyText).map { it.value }
+                links.addAll(foundAcestream)
+                
+                // M3U8 regex
+                val m3u8Regex = """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE)
+                val foundM3u8 = m3u8Regex.findAll(bodyText).map { it.value }
+                links.addAll(foundM3u8)
+                
+                // RTMP regex
+                val rtmpRegex = """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE)
+                val foundRtmp = rtmpRegex.findAll(bodyText).map { it.value }
+                links.addAll(foundRtmp)
+            }
+
+            // 10. Also search in the raw HTML for hidden links
+            val htmlRegexPatterns = listOf(
+                "acestream://[a-zA-Z0-9]+".toRegex(),
+                """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE),
+                """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE)
+            )
+            
+            htmlRegexPatterns.forEach { regex ->
+                val htmlFound = regex.findAll(html).map { it.value }
+                links.addAll(htmlFound)
+            }
+
+            val finalLinks = links.toList().distinct()
+            Log.d("Scraper", "Found ${finalLinks.size} total stream links for $detailPageUrl")
+            Log.d("Scraper", "Stream types found: ${finalLinks.joinToString(", ") { 
+                when {
+                    it.startsWith("acestream://") -> "Acestream"
+                    it.contains(".m3u8") -> "M3U8/HLS"
+                    it.startsWith("rtmp") -> "RTMP"
+                    it.contains("youtube.com") || it.contains("youtu.be") -> "YouTube"
+                    it.contains("twitch.tv") -> "Twitch"
+                    else -> "HTTP/Web"
+                }
+            }}")
+            
+            finalLinks
+        } catch (e: Exception) {
+            Log.e("Scraper", "Error fetching stream links for $detailPageUrl", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
+            .hostnameVerifier { _, _ -> true }
+            .build()
+
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Accept-Encoding", "identity")
+            .header("Connection", "keep-alive")
+            .header("Cache-Control", "no-cache")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.e("Scraper", "HTTP error: ${response.code} - ${response.message}")
+                throw java.io.IOException("HTTP error: ${response.code}")
+            }
+            
+            val body = response.body
+            if (body == null) {
+                throw java.io.IOException("Empty response body")
+            }
+            
+            // OkHttp should automatically decompress gzipped content, but let's be explicit
+            val content = body.string()
+            Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
+            content
+        }
+    }
+
+    private fun createInsecureSslSocketFactory(): javax.net.ssl.SSLSocketFactory {
+        val trustAllManager = createTrustAllManager()
+        val sslContext = javax.net.ssl.SSLContext.getInstance("SSL")
+        sslContext.init(null, arrayOf(trustAllManager), java.security.SecureRandom())
+        return sslContext.socketFactory
+    }
+
+    private fun createTrustAllManager(): javax.net.ssl.X509TrustManager {
+        return object : javax.net.ssl.X509TrustManager {
+            override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
+            override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
+            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
+        }
+    }
+
+    // A private class that will act as the bridge between JavaScript and Kotlin
+    private class WebAppInterface(private val onHtmlReady: (String) -> Unit) {
+        @JavascriptInterface
+        fun processHTML(html: String) {
+            onHtmlReady(html)
+        }
+    }
+
+    private suspend fun fetchHtmlWithWebView(url: String, waitForSelector: String): String? = withTimeoutOrNull(20000) { // 20 second timeout
+        suspendCancellableCoroutine<String?> { continuation ->
+            // Must run WebView on the main thread
+            // No need for withContext(Dispatchers.Main) if the calling coroutine is already on Main
+            // But to be safe, let's ensure it. However, since this is a suspend function,
+            // the caller's context matters. Let's assume for now the caller handles the Main thread.
+            // The ViewModel will call this from Dispatchers.IO, so we must switch to Main.
+            kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
+                Log.d("ScraperWebView", "Creating WebView for $url")
+                val webView = WebView(context)
+
+                val webAppInterface = WebAppInterface { html ->
+                    if (continuation.isActive) {
+                        continuation.resume(html)
+                    }
+                    // It's crucial to destroy the WebView on the main thread
+                    webView.destroy()
+                }
+
+                val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                webView.settings.userAgentString = desktopUserAgent
+                webView.settings.javaScriptEnabled = true
+                webView.settings.domStorageEnabled = true
+                webView.settings.allowFileAccess = true
+                webView.settings.allowContentAccess = true
+                webView.settings.allowUniversalAccessFromFileURLs = true
+                webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                webView.addJavascriptInterface(webAppInterface, "Android")
+
+                webView.webViewClient = object : WebViewClient() {
+                    override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                        handler?.proceed() // Ignore SSL errors
+                    }
+
+                    override fun onPageFinished(view: WebView, url: String) {
+                        Log.d("ScraperWebView", "onPageFinished for $url. Injecting polling script.")
+                        val script = """
+                            (function() {
+                                const selector = '$waitForSelector';
+                                const maxTries = 40; // Increased from 20
+                                let tries = 0;
+                                const interval = setInterval(() => {
+                                    const elementFound = document.querySelector(selector);
+                                    if (elementFound || tries >= maxTries) {
+                                        clearInterval(interval);
+                                        if(elementFound) {
+                                            Android.processHTML(document.documentElement.outerHTML);
+                                        } else {
+                                            // If element is not found after all tries, return the whole html
+                                            // to allow for fallback parsing.
+                                            Android.processHTML(document.documentElement.outerHTML);
+                                        }
+                                    }
+                                    tries++;
+                                }, 500);
+                            })();
+                        """
+                        view.evaluateJavascript(script, null)
+                    }
+
+                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                        super.onReceivedError(view, request, error)
+                        if (continuation.isActive) {
+                            continuation.resumeWithException(RuntimeException("WebView error: ${error?.description}"))
+                        }
+                        view?.destroy()
+                    }
+                }
+
+                continuation.invokeOnCancellation {
+                    // Ensure WebView is destroyed on the main thread if the coroutine is cancelled
+                     kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
+                        webView.destroy()
+                    }
+                }
+
+                webView.loadUrl(url)
+            }
+        }
+    }
+}

@@ -10,26 +10,24 @@ jobs:
   runs-on: ubuntu-latest
 
   steps:
-   - name: Checkout repository
+   - name: Checkout code
      uses: actions/checkout@v4
-
+   
    - name: Set up JDK 17
      uses: actions/setup-java@v4
      with:
-      java-version: '17'
-      distribution: 'temurin'
-
+       java-version: '17'
+       distribution: 'temurin'
+   
    - name: Cache Gradle dependencies
-     uses: actions/cache@v3
+     uses: actions/cache@v4
      with:
-      path: |
-       ~/.gradle/caches
-       ~/.gradle/wrapper
-      key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-      restore-keys: |
-       ${{ runner.os }}-gradle-
-
-   - name: Make gradlew executable
+       path: |
+         ~/.gradle/caches
+         ~/.gradle/wrapper
+       key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+       restore-keys: |
+         ${{ runner.os }}-gradle-   - name: Make gradlew executable
      run: chmod +x gradlew
 
    - name: Build release APK
@@ -39,36 +37,29 @@ jobs:
      id: get_tag
      run: echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-   - name: Create Release
-     uses: actions/create-release@v1
-     id: create_release
-     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+   - name: Upload APK artifacts
+     uses: actions/upload-artifact@v4
      with:
-      tag_name: ${{ steps.get_tag.outputs.tag_name }}
-      release_name: LiveTV Android App ${{ steps.get_tag.outputs.tag_name }}
-      body: |
-       ## LiveTV Android App - Release ${{ steps.get_tag.outputs.tag_name }}
+       name: LiveTV-APKs-${{ github.ref_name }}
+       path: output/*.apk
+       retention-days: 30
 
-       Download the APK file below and install it on your Android TV or device.
-
-       **Features:**
-       - Live TV streaming with multiple sources
-       - Football matches as default section
-       - Modern Material Design interface
-       - Configurable scraping sources
-       - Multiple stream formats support (Acestream, M3U8, etc.)
-
-       **Installation Instructions:**
-       1. Download the APK file
-       2. Transfer to your Android device/TV
-       3. Enable "Unknown Sources" in Settings > Security
-       4. Install the APK
-
-      draft: false
-      prerelease: false
-
-   - name: Upload Release APK
+   - name: Create GitHub Release with APKs
+     run: |
+       gh release create ${{ github.ref_name }} 
+         --title "LiveTV AndroidTV v${{ github.ref_name }}" 
+         --notes "Release of LiveTV AndroidTV app v${{ github.ref_name }}
+         
+         ## What's Included
+         - **LiveTV-${{ github.ref_name }}-release.apk** - Production release build
+         - **LiveTV-${{ github.ref_name }}-debug.apk** - Debug build for testing
+         
+         ## Installation
+         Download the release APK to your Android TV device and install via ADB or file manager." 
+         output/LiveTV-${{ github.ref_name }}-release.apk 
+         output/LiveTV-${{ github.ref_name }}-debug.apk
+     env:
+       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   - name: Upload Release APK
      uses: actions/upload-release-asset@v1
      env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

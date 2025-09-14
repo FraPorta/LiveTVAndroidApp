@@ -39,17 +39,15 @@ jobs:
       java-version: '17'
       distribution: 'temurin'
 
-   - name: Cache Gradle dependencies
-     uses: actions/cache@v3
-     with:
-      path: |
-       ~/.gradle/caches
-       ~/.gradle/wrapper
-      key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-      restore-keys: |
-       ${{ runner.os }}-gradle-
-
-   - name: Make gradlew executable
+    - name: Cache Gradle dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-   - name: Make gradlew executable
      run: chmod +x gradlew
 
    - name: Clean project
@@ -105,7 +103,7 @@ jobs:
       ls -la output/
 
    - name: Upload APK artifacts
-     uses: actions/upload-artifact@v3
+     uses: actions/upload-artifact@v4
      with:
       name: LiveTV-APKs-${{ steps.version.outputs.tag_name }}
       path: output/*.apk
@@ -137,47 +135,31 @@ jobs:
       gh release delete "${{ steps.check_release.outputs.existing_tag }}" --yes || true
       git push --delete origin "${{ steps.check_release.outputs.existing_tag }}" || true
 
-   - name: Create Release
-     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-     uses: actions/create-release@v1
-     id: create_release
+   - name: Create or Update Release with APKs
+     if: ${{ steps.version.outputs.should_release == 'true' }}
+     run: |
+       # Create or update the release with GitHub CLI
+       gh release create ${{ steps.version.outputs.tag_name }} 
+         --title "LiveTV AndroidTV v${{ steps.version.outputs.tag_name }}" 
+         --notes "Automated release of LiveTV AndroidTV app v${{ steps.version.outputs.tag_name }}
+
+       ## What's Included
+       - **LiveTV-${{ steps.version.outputs.tag_name }}-release.apk** - Production release build  
+       - **LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk** - Debug build for testing
+       
+       ## Installation
+       Download the release APK to your Android TV device and install via ADB or file manager.
+       
+       ## Changes
+       See commit history for detailed changes since the last release." 
+         output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
+         output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
+         || gh release upload ${{ steps.version.outputs.tag_name }} 
+            output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
+            output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
+            --clobber
      env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-     with:
-      tag_name: v${{ steps.version.outputs.version_name }}
-      release_name: LiveTV v${{ steps.version.outputs.version_name }} - ${{ steps.version.outputs.commit_msg }}
-      body: |
-       ## 📱 LiveTV Android App v${{ steps.version.outputs.version_name }}
-
-       **🚀 Latest Changes:**
-       ${{ steps.version.outputs.commit_msg }}
-
-       **📋 Build Information:**
-       - **Version:** ${{ steps.version.outputs.version_name }}
-       - **Build:** #${{ steps.version.outputs.version_code }}
-       - **Commit:** `${{ steps.version.outputs.commit_hash }}`
-       - **Date:** ${{ steps.version.outputs.build_date }}
-
-       **✨ App Features:**
-       - 🏈 Football matches as default section
-       - ⚡ Pagination for improved performance  
-       - 🎨 Modern Material Design UI
-       - ⚙️ Configurable scraping source URLs
-       - 🔗 Intent chooser for stream links
-       - 📱 Support for Acestream, M3U8, RTMP streams
-       - 🖥️ Optimized for Android TV, tablets, and phones
-
-       **📥 Installation:**
-       1. Download the APK file below
-       2. Enable "Unknown Sources" in Android Settings → Security
-       3. Install the APK on your device
-       4. Enjoy live sports streaming!
-
-       **🔄 Auto-Release**
-       This release was automatically generated from the latest commit.
-
-      draft: false
-      prerelease: false
+       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
    - name: Upload Release Assets
      if: github.event_name == 'push' && github.ref == 'refs/heads/master'

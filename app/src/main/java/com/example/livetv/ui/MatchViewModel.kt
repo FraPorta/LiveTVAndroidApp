@@ -22,7 +22,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     // The list of matches currently displayed on the UI
     val visibleMatches = mutableStateOf<List<Match>>(emptyList())
 
-    // The number of matches currently shown
+    // Available filter options
+    val availableSports = mutableStateOf<List<String>>(emptyList())
+    val availableLeagues = mutableStateOf<List<String>>(emptyList())
+
+    // Current filter selections
+    val selectedSport = mutableStateOf<String?>(null)
+    val selectedLeague = mutableStateOf<String?>(null)
+
+    // The number of matches currently shown (after filtering)
     private var currentVisibleCount = 0
 
     val isLoadingInitialList = mutableStateOf(false)
@@ -42,6 +50,10 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d("ViewModel", "Calling repository.getMatchList()")
                 allMatches = repository.getMatchList()
                 Log.d("ViewModel", "Repository returned ${allMatches.size} matches.")
+                
+                // Extract available sports and leagues for filtering
+                updateFilterOptions()
+                
                 currentVisibleCount = 0
                 visibleMatches.value = emptyList()
                 loadMoreMatches() // Load the first batch
@@ -56,12 +68,14 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadMoreMatches() {
-        Log.d("ViewModel", "loadMoreMatches called. Current visible: $currentVisibleCount / ${allMatches.size}")
+        val filteredMatches = getFilteredMatches()
+        Log.d("ViewModel", "loadMoreMatches called. Current visible: $currentVisibleCount / ${filteredMatches.size} (filtered from ${allMatches.size} total)")
+        
         val nextLoadCount = if (currentVisibleCount == 0) INITIAL_LOAD_SIZE else LOAD_MORE_SIZE
-        val newVisibleCount = (currentVisibleCount + nextLoadCount).coerceAtMost(allMatches.size)
+        val newVisibleCount = (currentVisibleCount + nextLoadCount).coerceAtMost(filteredMatches.size)
 
         if (newVisibleCount > currentVisibleCount) {
-            val nextBatch = allMatches.subList(currentVisibleCount, newVisibleCount)
+            val nextBatch = filteredMatches.subList(currentVisibleCount, newVisibleCount)
             Log.d("ViewModel", "Loading next batch of ${nextBatch.size} matches.")
             visibleMatches.value = visibleMatches.value + nextBatch
             currentVisibleCount = newVisibleCount
@@ -102,5 +116,47 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             currentList[index] = updatedMatch
             visibleMatches.value = currentList
         }
+    }
+
+    private fun updateFilterOptions() {
+        val sports = allMatches.map { it.sport }.distinct().sorted()
+        val leagues = allMatches.map { it.league }.distinct().sorted()
+        
+        availableSports.value = listOf("All Sports") + sports
+        availableLeagues.value = listOf("All Leagues") + leagues
+        
+        Log.d("ViewModel", "Available sports: ${sports.joinToString()}")
+        Log.d("ViewModel", "Available leagues: ${leagues.joinToString()}")
+    }
+
+    private fun getFilteredMatches(): List<Match> {
+        return allMatches.filter { match ->
+            val sportMatches = selectedSport.value == null || 
+                              selectedSport.value == "All Sports" || 
+                              match.sport == selectedSport.value
+            
+            val leagueMatches = selectedLeague.value == null || 
+                               selectedLeague.value == "All Leagues" || 
+                               match.league == selectedLeague.value
+            
+            sportMatches && leagueMatches
+        }
+    }
+
+    fun setSportFilter(sport: String?) {
+        selectedSport.value = if (sport == "All Sports") null else sport
+        applyFilters()
+    }
+
+    fun setLeagueFilter(league: String?) {
+        selectedLeague.value = if (league == "All Leagues") null else league
+        applyFilters()
+    }
+
+    private fun applyFilters() {
+        Log.d("ViewModel", "Applying filters - Sport: ${selectedSport.value}, League: ${selectedLeague.value}")
+        currentVisibleCount = 0
+        visibleMatches.value = emptyList()
+        loadMoreMatches()
     }
 }

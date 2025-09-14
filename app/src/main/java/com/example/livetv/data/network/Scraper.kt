@@ -104,27 +104,96 @@ class Scraper(private val context: Context) {
                 var teams = ""
                 var competition = ""
                 
-                // Try different selectors for match information
+                // Enhanced selectors for match information based on livetv.sx structure
                 if (row != null) {
-                    time = row.select("td.time, .time, [class*='time']").text()
-                    teams = row.select("td.evdesc, .evdesc, .event-title, [class*='event'], [class*='team']").text()
-                    competition = row.select("td.league > a, .league, .competition, [class*='league']").text()
+                    // Time extraction - try multiple approaches
+                    time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
+                    
+                    // Team extraction - try multiple approaches as the main content varies
+                    teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
+                    
+                    // Competition/League extraction - usually shorter text with league name
+                    competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
+                    
+                    // Alternative: look for the link text which often contains team names
+                    if (teams.isBlank() || teams.length < 5) {
+                        teams = row.select("a").first()?.text()?.trim() ?: ""
+                    }
+                    
+                    // If teams still looks like league info and competition looks like team names, swap them
+                    if (teams.isNotBlank() && competition.isNotBlank()) {
+                        // Check if what we think are "teams" is actually league/date/time info
+                        val teamsLooksLikeLeague = teams.length < 10 || 
+                                                 teams.contains(Regex("""\([^)]+\)""")) ||  // Contains parentheses with league info
+                                                 teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||  // Contains date pattern like "15 September at"
+                                                 teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
+                        
+                        // Check if what we think is "competition" actually contains team names (longer text, contains team separators, actual team names)
+                        val competitionLooksLikeTeams = competition.length > 15 ||
+                                                       competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||  // Team separators or scores
+                                                       competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2  // Exactly two parts when split by separators
+                        
+                        if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
+                            // Swap them
+                            val temp = teams
+                            teams = competition
+                            competition = temp
+                            Log.d("Scraper", "Swapped teams and competition fields - Teams: '$teams', Competition: '$competition'")
+                        }
+                    }
+                    
+                    // Extract time from the teams/competition text if time is still empty
+                    if (time.isBlank()) {
+                        val combinedText = "$teams $competition"
+                        val timePattern = Regex("""\b(\d{1,2}:\d{2})\b""")
+                        val timeMatch = timePattern.find(combinedText)
+                        if (timeMatch != null) {
+                            time = timeMatch.value
+                        } else {
+                            // Try to extract time from date patterns like "14 September at 15:30"
+                            val dateTimePattern = Regex("""\d{1,2}\s+\w+\s+at\s+(\d{1,2}:\d{2})""")
+                            val dateTimeMatch = dateTimePattern.find(combinedText)
+                            if (dateTimeMatch != null) {
+                                time = dateTimeMatch.groupValues[1]
+                            }
+                        }
+                    }
                 }
                 
                 // If we couldn't find team info in the row, try the link text itself
-                if (teams.isBlank()) {
+                if (teams.isBlank() || teams.length < 5) {
                     teams = link.text().trim()
                 }
                 
-                // If we still don't have team info, try the parent elements
-                if (teams.isBlank() && link.parent() != null) {
-                    teams = link.parent()!!.text().trim()
+                // If still no teams, try different approaches
+                if (teams.isBlank() || teams.length < 5) {
+                    // Try to get text from siblings or parent elements
+                    var parent = link.parent()
+                    var attempts = 0
+                    while (parent != null && attempts < 3 && (teams.isBlank() || teams.length < 5)) {
+                        val parentText = parent.ownText().trim()
+                        if (parentText.isNotBlank() && parentText.length > 5) {
+                            teams = parentText
+                            break
+                        }
+                        parent = parent.parent()
+                        attempts++
+                    }
                 }
                 
-                Log.d("Scraper", "Match found - Time: '$time', Teams: '$teams', Competition: '$competition'")
+                // Clean up teams text - remove time and league info if they got mixed in
+                teams = cleanTeamNames(teams, time, competition)
+                
+                // Extract sport and league information
+                val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
+                
+                Log.d("Scraper", "Raw extraction - Time: '$time', Teams: '$teams', Competition: '$competition'")
+                Log.d("Scraper", "Final match - Teams: '$teams', Time: '$time', Competition: '$competition', Sport: '$sport', League: '$league'")
                 
                 if (teams.isNotBlank() && teams.length > 3) { // Basic validation
-                    matches.add(Match(time, teams, competition, detailPageUrl))
+                    matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
+                } else {
+                    Log.w("Scraper", "Skipped match - Teams too short or blank: '$teams' (length: ${teams.length})")
                 }
             }
             
@@ -139,6 +208,154 @@ class Scraper(private val context: Context) {
         } catch (e: Exception) {
             Log.e("Scraper", "Error scraping match list", e)
             emptyList()
+        }
+    }
+
+    /**
+     * Extracts sport and league information from available data.
+     * Uses competition text, team names, and URL patterns to determine sport and league.
+     */
+    private fun extractSportAndLeague(competition: String, teams: String, row: org.jsoup.nodes.Element?, detailPageUrl: String): Pair<String, String> {
+        var sport = "Football" // Default to football since it's the most common
+        var league = "" // Will be determined based on specific league detection
+        
+        val combinedText = "$competition $teams $detailPageUrl".lowercase()
+        
+        // Sport detection based on keywords
+        when {
+            combinedText.contains("football") || combinedText.contains("soccer") || 
+            combinedText.contains("premier league") || combinedText.contains("la liga") ||
+            combinedText.contains("serie a") || combinedText.contains("bundesliga") ||
+            combinedText.contains("champions league") || combinedText.contains("uefa") ||
+            combinedText.contains("fifa") || combinedText.contains("world cup") ||
+            combinedText.contains("ligue 1") || combinedText.contains("eredivisie") -> {
+                sport = "Football"
+            }
+            combinedText.contains("basketball") || combinedText.contains("nba") || 
+            combinedText.contains("euroleague") || combinedText.contains("fiba") -> {
+                sport = "Basketball"
+            }
+            combinedText.contains("tennis") || combinedText.contains("atp") || 
+            combinedText.contains("wta") || combinedText.contains("wimbledon") ||
+            combinedText.contains("us open") || combinedText.contains("french open") -> {
+                sport = "Tennis"
+            }
+            combinedText.contains("hockey") || combinedText.contains("nhl") || 
+            combinedText.contains("iihf") -> {
+                sport = "Ice Hockey"
+            }
+            combinedText.contains("baseball") || combinedText.contains("mlb") -> {
+                sport = "Baseball"
+            }
+            combinedText.contains("rugby") -> {
+                sport = "Rugby"
+            }
+            combinedText.contains("cricket") -> {
+                sport = "Cricket"
+            }
+            combinedText.contains("boxing") || combinedText.contains("mma") || 
+            combinedText.contains("ufc") -> {
+                sport = "Combat Sports"
+            }
+            combinedText.contains("formula") || combinedText.contains("f1") || 
+            combinedText.contains("motogp") || combinedText.contains("racing") -> {
+                sport = "Motor Sports"
+            }
+            combinedText.contains("volleyball") -> {
+                sport = "Volleyball"
+            }
+        }
+        
+        // League extraction based on common patterns
+        when {
+            // Football leagues
+            combinedText.contains("premier league") -> league = "Premier League"
+            combinedText.contains("la liga") -> league = "La Liga"
+            combinedText.contains("serie a") -> league = "Serie A"
+            combinedText.contains("bundesliga") -> league = "Bundesliga"
+            combinedText.contains("ligue 1") -> league = "Ligue 1"
+            combinedText.contains("champions league") -> league = "Champions League"
+            combinedText.contains("europa league") -> league = "Europa League"
+            combinedText.contains("world cup") -> league = "World Cup"
+            combinedText.contains("euros") || combinedText.contains("euro 20") -> league = "European Championship"
+            combinedText.contains("eredivisie") -> league = "Eredivisie"
+            combinedText.contains("mls") -> league = "MLS"
+            
+            // Basketball leagues
+            combinedText.contains("nba") -> league = "NBA"
+            combinedText.contains("euroleague") -> league = "EuroLeague"
+            combinedText.contains("ncaa") -> league = "NCAA"
+            
+            // Tennis tournaments
+            combinedText.contains("wimbledon") -> league = "Wimbledon"
+            combinedText.contains("us open") -> league = "US Open"
+            combinedText.contains("french open") -> league = "French Open"
+            combinedText.contains("australian open") -> league = "Australian Open"
+            combinedText.contains("atp") -> league = "ATP Tour"
+            combinedText.contains("wta") -> league = "WTA Tour"
+            
+            // Other sports
+            combinedText.contains("nhl") -> league = "NHL"
+            combinedText.contains("mlb") -> league = "MLB"
+            combinedText.contains("nfl") -> league = "NFL"
+            combinedText.contains("ufc") -> league = "UFC"
+            combinedText.contains("formula 1") || combinedText.contains("f1") -> league = "Formula 1"
+            
+            // Only set league if we specifically identified one, otherwise leave it blank
+            // This prevents duplication with competition field
+        }
+        
+        return Pair(sport, league)
+    }
+
+    /**
+     * Cleans team names by removing time and league information that might have been mixed in
+     * Also extracts proper time information from mixed content
+     */
+    private fun cleanTeamNames(teams: String, time: String, competition: String): String {
+        var cleaned = teams
+        
+        // Remove date patterns (e.g., "14 September at", "15 September at")
+        cleaned = cleaned.replace(Regex("""\d{1,2}\s+\w+\s+at\s*"""), "").trim()
+        
+        // Remove time patterns (HH:MM format)
+        cleaned = cleaned.replace(Regex("""\d{1,2}:\d{2}"""), "").trim()
+        
+        // Remove competition/league text if it appears in teams (after parentheses)
+        cleaned = cleaned.replace(Regex("""\([^)]*\)"""), "").trim()
+        
+        // Remove league/competition names that might be mixed in
+        if (competition.isNotBlank()) {
+            cleaned = cleaned.replace(competition, "", ignoreCase = true).trim()
+        }
+        
+        // Remove common time/date patterns
+        val patterns = listOf(
+            """\d{1,2}\s+\w+\s+\d{4}\s+at\s*""", // "14 September 2025 at"
+            """\w+\s+\d{1,2}\s+at\s*""", // "September 14 at"
+            """\d{1,2}\s+\w+\s+at\s*""", // "14 September at"
+            """at\s+\d{1,2}:\d{2}""", // "at 15:30"
+            """live|today|tomorrow|now""",
+            """GMT|UTC|CET|EST|PST""",
+            """\s+0:\d+\s*$""" // Remove scores like "0:0" at the end
+        )
+        
+        patterns.forEach { pattern ->
+            cleaned = cleaned.replace(Regex(pattern, RegexOption.IGNORE_CASE), "").trim()
+        }
+        
+        // Remove extra whitespace and clean up
+        cleaned = cleaned.replace(Regex("""\s+"""), " ").trim()
+        
+        // Remove leading/trailing punctuation but keep team separators like "–" and "-"
+        cleaned = cleaned.replace(Regex("""^[|:,.;\s]+|[|:,.;\s]+$"""), "").trim()
+        
+        // Ensure we have actual team names (should contain team separator like – or vs)
+        return if (cleaned.isNotBlank() && cleaned.length > 3 && 
+                   (cleaned.contains("–") || cleaned.contains("-") || cleaned.contains("vs") || cleaned.contains("v "))) {
+            cleaned
+        } else {
+            teams // Return original if cleaning removed too much
         }
     }
 

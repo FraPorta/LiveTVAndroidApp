@@ -27,15 +27,17 @@ jobs:
          ~/.gradle/wrapper
        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
        restore-keys: |
-         ${{ runner.os }}-gradle-   - name: Make gradlew executable
+         ${{ runner.os }}-gradle-
+   
+   - name: Make gradlew executable
      run: chmod +x gradlew
 
-   - name: Build release APK
-     run: ./gradlew assembleRelease
-
-   - name: Get tag name
-     id: get_tag
-     run: echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+   - name: Build release and debug APKs
+     run: |
+       ./gradlew assembleRelease assembleDebug
+       mkdir -p output
+       cp app/build/outputs/apk/release/app-release.apk output/LiveTV-${{ github.ref_name }}-release.apk
+       cp app/build/outputs/apk/debug/app-debug.apk output/LiveTV-${{ github.ref_name }}-debug.apk
 
    - name: Upload APK artifacts
      uses: actions/upload-artifact@v4
@@ -46,8 +48,8 @@ jobs:
 
    - name: Create GitHub Release with APKs
      run: |
-       gh release create ${{ github.ref_name }} 
-         --title "LiveTV AndroidTV v${{ github.ref_name }}" 
+       gh release create ${{ github.ref_name }} \
+         --title "LiveTV AndroidTV v${{ github.ref_name }}" \
          --notes "Release of LiveTV AndroidTV app v${{ github.ref_name }}
          
          ## What's Included
@@ -55,16 +57,8 @@ jobs:
          - **LiveTV-${{ github.ref_name }}-debug.apk** - Debug build for testing
          
          ## Installation
-         Download the release APK to your Android TV device and install via ADB or file manager." 
-         output/LiveTV-${{ github.ref_name }}-release.apk 
+         Download the release APK to your Android TV device and install via ADB or file manager." \
+         output/LiveTV-${{ github.ref_name }}-release.apk \
          output/LiveTV-${{ github.ref_name }}-debug.apk
      env:
-       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   - name: Upload Release APK
-     uses: actions/upload-release-asset@v1
-     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-     with:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      asset_path: app/build/outputs/apk/release/app-release-unsigned.apk
-      asset_name: LiveTV-${{ steps.get_tag.outputs.tag_name }}.apk
-      asset_content_type: application/vnd.android.package-archive
+       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

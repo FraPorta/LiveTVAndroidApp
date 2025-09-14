@@ -511,8 +511,18 @@ class Scraper(private val context: Context) {
                 links.addAll(htmlFound)
             }
 
-            val finalLinks = links.toList().distinct()
-            Log.d("Scraper", "Found ${finalLinks.size} total stream links for $detailPageUrl")
+            val allLinks = links.toList().distinct()
+            
+            // Filter out invalid or incomplete URLs
+            val finalLinks = allLinks.filter { link ->
+                isValidStreamUrl(link)
+            }
+            
+            Log.d("Scraper", "Found ${allLinks.size} total links, ${finalLinks.size} valid stream links for $detailPageUrl")
+            if (allLinks.size != finalLinks.size) {
+                val filteredOut = allLinks - finalLinks.toSet()
+                Log.d("Scraper", "Filtered out ${filteredOut.size} invalid links: ${filteredOut.joinToString()}")
+            }
             Log.d("Scraper", "Stream types found: ${finalLinks.joinToString(", ") { 
                 when {
                     it.startsWith("acestream://") -> "Acestream"
@@ -528,6 +538,52 @@ class Scraper(private val context: Context) {
         } catch (e: Exception) {
             Log.e("Scraper", "Error fetching stream links for $detailPageUrl", e)
             emptyList()
+        }
+    }
+
+    /**
+     * Validates if a stream URL is complete and potentially functional
+     */
+    private fun isValidStreamUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        
+        return when {
+            // Acestream links must be properly formatted
+            url.startsWith("acestream://") -> {
+                url.length > "acestream://".length && 
+                url.substringAfter("acestream://").isNotBlank()
+            }
+            
+            // HTTP/HTTPS links validation
+            url.startsWith("http://") || url.startsWith("https://") -> {
+                // Check for incomplete URLs like "https://cdn.live:"
+                val afterProtocol = when {
+                    url.startsWith("https://") -> url.substring(8)
+                    url.startsWith("http://") -> url.substring(7)
+                    else -> url
+                }
+                
+                // Must have domain and not end with just a colon
+                afterProtocol.isNotBlank() && 
+                !afterProtocol.endsWith(":") && 
+                afterProtocol.contains(".") &&
+                !afterProtocol.startsWith(".") &&
+                afterProtocol.length > 3
+            }
+            
+            // RTMP links
+            url.startsWith("rtmp://") || url.startsWith("rtmps://") -> {
+                url.length > 7 && url.contains(".")
+            }
+            
+            // Other protocols should have meaningful content after ://
+            url.contains("://") -> {
+                val afterProtocol = url.substringAfter("://")
+                afterProtocol.isNotBlank() && afterProtocol.length > 2
+            }
+            
+            // Reject anything else that doesn't look like a proper URL
+            else -> false
         }
     }
 

@@ -116,10 +116,18 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
 
 @Composable
 fun MatchItem(match: Match) {
+    // Categorize links to determine card height
+    val aceStreamLinks = match.streamLinks.filter { it.startsWith("acestream://") }
+    val webStreamLinks = match.streamLinks.filter { !it.startsWith("acestream://") }
+    val hasBothTypes = aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
+    
+    // Dynamic height based on content
+    val cardHeight = if (hasBothTypes) 260.dp else 200.dp
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp) // Fixed height for grid uniformity
+            .height(cardHeight)
     ) {
         Column(
             modifier = Modifier
@@ -190,48 +198,101 @@ fun MatchItem(match: Match) {
                     }
                 }
                 match.streamLinks.isNotEmpty() -> {
-                    // Compact stream display showing individual streams
-                    Text(
-                        text = "📺 ${match.streamLinks.size} streams available",
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    
-                    // Show individual streams with proper labels
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(if (hasBothTypes) 4.dp else 6.dp)
                     ) {
-                        match.streamLinks.take(4).forEachIndexed { index, link -> // Show up to 4 streams
-                            val streamLabel = when {
-                                link.startsWith("acestream://") -> "ACE ${index + 1}"
-                                link.contains(".m3u8") -> "M3U8 ${index + 1}"
-                                link.startsWith("rtmp") -> "RTMP ${index + 1}"
-                                link.contains("youtube.com") || link.contains("youtu.be") -> "YT ${index + 1}"
-                                link.contains("twitch.tv") -> "Twitch ${index + 1}"
-                                else -> "Stream ${index + 1}"
-                            }
+                        // Acestream Section
+                        if (aceStreamLinks.isNotEmpty()) {
+                            Text(
+                                text = "� ${aceStreamLinks.size} Acestream",
+                                style = if (hasBothTypes) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                             
-                            OutlinedButton(
-                                onClick = { 
-                                    // TODO: Open stream link
-                                    println("Opening stream: $link")
-                                },
-                                modifier = Modifier.height(32.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Text(
-                                    text = streamLabel,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
+                                aceStreamLinks.take(3).forEachIndexed { index, link ->
+                                    Button(
+                                        onClick = { 
+                                            // TODO: Open acestream link
+                                            println("Opening acestream: $link")
+                                        },
+                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    ) {
+                                        Text(
+                                            text = "ACE ${index + 1}",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                                if (aceStreamLinks.size > 3) {
+                                    Text(
+                                        text = "+${aceStreamLinks.size - 3}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(4.dp),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
-                        if (match.streamLinks.size > 4) {
+
+                        // Web Streams Section
+                        if (webStreamLinks.isNotEmpty()) {
                             Text(
-                                text = "+${match.streamLinks.size - 4}",
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(4.dp)
+                                text = "🌐 ${webStreamLinks.size} Web Streams",
+                                style = if (hasBothTypes) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary
                             )
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                webStreamLinks.take(3).forEachIndexed { index, link ->
+                                    val streamLabel = when {
+                                        link.contains(".m3u8") -> "M3U8 ${index + 1}"
+                                        link.startsWith("rtmp") -> "RTMP ${index + 1}"
+                                        link.contains("youtube.com") || link.contains("youtu.be") -> "YT ${index + 1}"
+                                        link.contains("twitch.tv") -> "Twitch ${index + 1}"
+                                        link.contains("webplayer") -> "Web ${index + 1}"
+                                        else -> "HTTP ${index + 1}"
+                                    }
+                                    
+                                    Button(
+                                        onClick = { 
+                                            // TODO: Open web stream link
+                                            println("Opening web stream: $link")
+                                        },
+                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.secondary,
+                                            contentColor = MaterialTheme.colorScheme.onSecondary
+                                        )
+                                    ) {
+                                        Text(
+                                            text = streamLabel,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                                if (webStreamLinks.size > 3) {
+                                    Text(
+                                        text = "+${webStreamLinks.size - 3}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(4.dp),
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
                         }
                     }
                 }

@@ -1,176 +1,227 @@
 name: Build and Release Android APK
 
 on:
-  # Trigger on push to main/master branch
-  push:
-    branches: [ master, main ]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
-  
-  # Trigger on pull request to main/master
-  pull_request:
-    branches: [ master, main ]
-  
-  # Allow manual trigger
-  workflow_dispatch:
-    inputs:
-      release_type:
-        description: 'Release type'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
+ # Trigger on push to main/master branch
+ push:
+  branches: [ master, main ]
+  paths-ignore:
+   - '**.md'
+   - '.gitignore'
+   - 'LICENSE'
+
+ # Trigger on pull request to main/master
+ pull_request:
+  branches: [ master, main ]
+
+ # Allow manual trigger
+ workflow_dispatch:
+  inputs:
+   release_type:
+    description: 'Release type'
+    required: true
+    default: 'debug'
+    type: choice
+    options:
+     - debug
+     - release
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        
-    - name: Cache Gradle dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
-          
-    - name: Make gradlew executable
-      run: chmod +x gradlew
-      
-    - name: Clean project
-      run: ./gradlew clean
-      
-    - name: Build debug APK
-      if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'debug')
-      run: ./gradlew assembleDebug
-      
-    - name: Build release APK
-      if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'release')
-      run: ./gradlew assembleRelease
-      
-    - name: Get version info
-      id: version
-      run: |
-        # Extract version from gradle.properties or build.gradle.kts
-        VERSION_NAME=$(grep -E "versionName|version\s*=" app/build.gradle.kts | head -1 | sed -E 's/.*["\047]([^"\047]+)["\047].*/\1/' || echo "1.0.0")
-        VERSION_CODE=$(grep -E "versionCode" app/build.gradle.kts | head -1 | sed -E 's/.*versionCode\s*=?\s*([0-9]+).*/\1/' || echo "1")
-        COMMIT_HASH=$(git rev-parse --short HEAD)
-        BUILD_DATE=$(date +'%Y%m%d-%H%M%S')
-        
-        echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
-        echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-        echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
-        echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
-        echo "tag_name=v$VERSION_NAME-$BUILD_DATE-$COMMIT_HASH" >> $GITHUB_OUTPUT
-        
-    - name: Rename APK files
-      run: |
-        # Create output directory
-        mkdir -p output
-        
-        # Copy and rename APK files with version info
-        if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-          cp app/build/outputs/apk/debug/app-debug.apk output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk
+ build:
+  runs-on: ubuntu-latest
+
+  steps:
+   - name: Checkout repository
+     uses: actions/checkout@v4
+
+   - name: Set up JDK 17
+     uses: actions/setup-java@v4
+     with:
+      java-version: '17'
+      distribution: 'temurin'
+
+   - name: Cache Gradle dependencies
+     uses: actions/cache@v3
+     with:
+      path: |
+       ~/.gradle/caches
+       ~/.gradle/wrapper
+      key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+      restore-keys: |
+       ${{ runner.os }}-gradle-
+
+   - name: Make gradlew executable
+     run: chmod +x gradlew
+
+   - name: Clean project
+     run: ./gradlew clean
+
+   - name: Build debug APK
+     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'debug')
+     run: ./gradlew assembleDebug
+
+   - name: Build release APK
+     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'release')
+     run: ./gradlew assembleRelease
+
+   - name: Get version info
+     id: version
+     run: |
+      # Extract version from build.gradle.kts
+      VERSION_NAME=$(grep -E "versionName\s*=" app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/')
+      VERSION_CODE=$(grep -E "versionCode\s*=" app/build.gradle.kts | sed -E 's/.*versionCode\s*=\s*([0-9]+).*/\1/')
+      COMMIT_HASH=$(git rev-parse --short HEAD)
+      BUILD_DATE=$(date +'%Y%m%d-%H%M')
+      COMMIT_MSG=$(git log -1 --pretty=%B | head -1)
+
+      # Create a unique tag name for auto-releases
+      TAG_NAME="v$VERSION_NAME-auto-$BUILD_DATE-$COMMIT_HASH"
+
+      echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+      echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+      echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+      echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
+      echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+      echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+   - name: Rename APK files
+     run: |
+      # Create output directory
+      mkdir -p output
+
+      # Copy and rename APK files with version info
+      if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+        cp app/build/outputs/apk/debug/app-debug.apk output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk
+      fi
+
+      if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+        cp app/build/outputs/apk/release/app-release-unsigned.apk output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk
+      fi
+
+      if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+        cp app/build/outputs/apk/release/app-release.apk output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release.apk
+      fi
+
+      # List files for verification
+      ls -la output/
+
+   - name: Upload APK artifacts
+     uses: actions/upload-artifact@v3
+     with:
+      name: LiveTV-APKs-${{ steps.version.outputs.tag_name }}
+      path: output/*.apk
+      retention-days: 30
+
+   - name: Check if release exists
+     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+     id: check_release
+     env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+     run: |
+      # Check if a release already exists for this version
+      EXISTING_RELEASE=$(gh release list --limit 100 | grep "v${{ steps.version.outputs.version_name }}" | head -1 || echo "")
+      if [ -n "$EXISTING_RELEASE" ]; then
+        echo "release_exists=true" >> $GITHUB_OUTPUT
+        RELEASE_TAG=$(echo "$EXISTING_RELEASE" | awk '{print $3}')
+        echo "existing_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+      else
+        echo "release_exists=false" >> $GITHUB_OUTPUT
+        echo "existing_tag=" >> $GITHUB_OUTPUT
+      fi
+
+   - name: Delete existing release if exists
+     if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check_release.outputs.release_exists == 'true'
+     env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+     run: |
+      echo "Deleting existing release: ${{ steps.check_release.outputs.existing_tag }}"
+      gh release delete "${{ steps.check_release.outputs.existing_tag }}" --yes || true
+      git push --delete origin "${{ steps.check_release.outputs.existing_tag }}" || true
+
+   - name: Create Release
+     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+     uses: actions/create-release@v1
+     id: create_release
+     env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+     with:
+      tag_name: v${{ steps.version.outputs.version_name }}
+      release_name: LiveTV v${{ steps.version.outputs.version_name }} - ${{ steps.version.outputs.commit_msg }}
+      body: |
+       ## 📱 LiveTV Android App v${{ steps.version.outputs.version_name }}
+
+       **🚀 Latest Changes:**
+       ${{ steps.version.outputs.commit_msg }}
+
+       **📋 Build Information:**
+       - **Version:** ${{ steps.version.outputs.version_name }}
+       - **Build:** #${{ steps.version.outputs.version_code }}
+       - **Commit:** `${{ steps.version.outputs.commit_hash }}`
+       - **Date:** ${{ steps.version.outputs.build_date }}
+
+       **✨ App Features:**
+       - 🏈 Football matches as default section
+       - ⚡ Pagination for improved performance  
+       - 🎨 Modern Material Design UI
+       - ⚙️ Configurable scraping source URLs
+       - 🔗 Intent chooser for stream links
+       - 📱 Support for Acestream, M3U8, RTMP streams
+       - 🖥️ Optimized for Android TV, tablets, and phones
+
+       **📥 Installation:**
+       1. Download the APK file below
+       2. Enable "Unknown Sources" in Android Settings → Security
+       3. Install the APK on your device
+       4. Enjoy live sports streaming!
+
+       **🔄 Auto-Release**
+       This release was automatically generated from the latest commit.
+
+      draft: false
+      prerelease: false
+
+   - name: Upload Release Assets
+     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+     env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+     run: |
+      # Upload all APK files to the release
+      for apk_file in output/*.apk; do
+        if [ -f "$apk_file" ]; then
+          filename=$(basename "$apk_file")
+          echo "Uploading $filename..."
+          gh release upload "v${{ steps.version.outputs.version_name }}" "$apk_file" --clobber
         fi
-        
-        if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-          cp app/build/outputs/apk/release/app-release-unsigned.apk output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk
-        fi
-        
-        if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-          cp app/build/outputs/apk/release/app-release.apk output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release.apk
-        fi
-        
-        # List files for verification
-        ls -la output/
-        
-    - name: Upload APK artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: LiveTV-APKs-${{ steps.version.outputs.tag_name }}
-        path: output/*.apk
-        retention-days: 30
-        
-    - name: Create Release
-      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-      uses: actions/create-release@v1
-      id: create_release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.version.outputs.tag_name }}
-        release_name: LiveTV Android App ${{ steps.version.outputs.tag_name }}
-        body: |
-          ## LiveTV Android App - Release ${{ steps.version.outputs.version_name }}
-          
-          **Build Information:**
-          - Version: ${{ steps.version.outputs.version_name }}
-          - Version Code: ${{ steps.version.outputs.version_code }}
-          - Commit: ${{ steps.version.outputs.commit_hash }}
-          - Build Date: ${{ steps.version.outputs.build_date }}
-          
-          **Features:**
-          - Live TV streaming with multiple sources
-          - Football section as default
-          - Pagination for improved performance
-          - Modern Material Design UI
-          - Configurable scraping source URL
-          - Intent chooser for stream links
-          - Acestream and Web stream support
-          
-          **Installation:**
-          1. Download the APK file below
-          2. Enable "Unknown Sources" in your Android settings
-          3. Install the APK
-          
-          **Changes in this release:**
-          - Auto-generated from latest commit on master branch
-          - See commit history for detailed changes
-          
-        draft: false
-        prerelease: false
-        
-    - name: Upload Release Assets
-      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk
-        asset_name: LiveTV-${{ steps.version.outputs.tag_name }}.apk
-        asset_content_type: application/vnd.android.package-archive
-        
-  notification:
-    runs-on: ubuntu-latest
-    needs: build
-    if: always()
-    
-    steps:
-    - name: Build Status Notification
-      run: |
-        if [ "${{ needs.build.result }}" == "success" ]; then
-          echo "✅ Build completed successfully!"
-          echo "📱 APK files are available in the artifacts section"
-          if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/master" ]; then
-            echo "🚀 New release has been created"
-          fi
+      done
+
+      # Set the main APK as the primary download
+      if [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" ]; then
+        cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" "LiveTV-v${{ steps.version.outputs.version_name }}.apk"
+        gh release upload "v${{ steps.version.outputs.version_name }}" "LiveTV-v${{ steps.version.outputs.version_name }}.apk" --clobber
+      elif [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" ]; then
+        cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" "LiveTV-v${{ steps.version.outputs.version_name }}.apk"
+        gh release upload "v${{ steps.version.outputs.version_name }}" "LiveTV-v${{ steps.version.outputs.version_name }}.apk" --clobber
+      fi
+
+ notification:
+  runs-on: ubuntu-latest
+  needs: build
+  if: always()
+
+  steps:
+   - name: Build Status Notification
+     run: |
+      if [ "${{ needs.build.result }}" == "success" ]; then
+        echo "✅ Build completed successfully!"
+        echo "📱 APK files have been built and uploaded"
+        if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/master" ]; then
+          echo "🚀 New release has been automatically created!"
+          echo "🔗 Download: https://github.com/${{ github.repository }}/releases/latest"
+          echo "📋 All releases: https://github.com/${{ github.repository }}/releases"
         else
-          echo "❌ Build failed!"
-          echo "Please check the logs for more information"
+          echo "📦 Build artifacts are available in the Actions section"
         fi
+      else
+        echo "❌ Build failed!"
+        echo "Please check the workflow logs for detailed error information"
+        echo "🔧 Common issues: Missing dependencies, syntax errors, or build configuration"
+      fi

@@ -6,12 +6,14 @@ This repository is configured with GitHub Actions to automatically build and rel
 
 ## 🚀 Getting the Latest Version
 
-### Method 1: Download from Releases (Recommended)
+### ⚡ Fully Automatic Releases (Recommended)
 1. Go to the [Releases page](https://github.com/FraPorta/LiveTVAndroidApp/releases)
 2. Download the latest `.apk` file
 3. Install on your Android device/TV
 
-### Method 2: Download from Actions Artifacts
+**✨ Every push to master automatically creates a new release!**
+
+### Alternative: Download from Actions Artifacts
 1. Go to the [Actions tab](https://github.com/FraPorta/LiveTVAndroidApp/actions)
 2. Click on the latest successful workflow run
 3. Download the APK from the "Artifacts" section
@@ -19,11 +21,16 @@ This repository is configured with GitHub Actions to automatically build and rel
 
 ## 📋 Release Types
 
-### Automatic Releases
-- **Push to `master`**: Creates automatic releases with version info
-- **Tagged releases**: Create a tag like `v1.0.0` to trigger a formal release
+### 🔄 Automatic Releases (Main Method)
+- **Push to `master`**: Automatically creates releases with proper version numbers
+- **Smart Updates**: Only creates new releases when version changes
+- **Clean Names**: Uses version from `build.gradle.kts` (e.g., `v1.0.2`)
 
-### Manual Releases
+### 🏷️ Tagged Releases (Optional)
+- Create a tag like `v1.0.0` for special milestone releases
+- Useful for major versions or stable releases
+
+### 🛠️ Manual Builds (Development)
 - Go to Actions tab → "Build and Release Android APK" → "Run workflow"
 - Choose between `debug` or `release` build
 
@@ -90,16 +97,27 @@ Example: `LiveTV-v1.0.0-20240914-a1b2c3d-release.apk`
 1. Create feature branch: `git checkout -b feature/new-feature`
 2. Make changes and test locally
 3. Create pull request to `master`
-4. After merge, automatic build triggers
+4. After merge, automatic release is created! 🎉
 
 ### For Maintainers
-1. Review and merge pull requests
-2. Automatic release is created
-3. For major versions, create tagged release:
-   ```bash
-   git tag v2.0.0
-   git push origin v2.0.0
+1. **Update version** in `app/build.gradle.kts`:
+   ```kotlin
+   versionCode = 5
+   versionName = "1.0.3"
    ```
+2. **Push changes**:
+   ```bash
+   git add .
+   git commit -m "Add new features and fix bugs"
+   git push origin master
+   ```
+3. **Automatic release created** - No manual work needed! ✨
+
+### Optional: Tagged Releases for Milestones
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
 
 ## 📊 Build Status
 

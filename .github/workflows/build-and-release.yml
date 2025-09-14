@@ -76,12 +76,19 @@ jobs:
       # Create a unique tag name for auto-releases
       TAG_NAME="v$VERSION_NAME-auto-$BUILD_DATE-$COMMIT_HASH"
 
+      # Determine if we should create a release (only on push to master)
+      SHOULD_RELEASE="false"
+      if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/master" ]; then
+        SHOULD_RELEASE="true"
+      fi
+
       echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
       echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
       echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
       echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
       echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
       echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+      echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
 
    - name: Rename APK files
      run: |
@@ -142,17 +149,32 @@ jobs:
      env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
      run: |
-      # First, create simplified APK names for the release
+      # Debug: List all files in output directory
+      echo "=== Files in output directory ==="
+      ls -la output/
+
+      # First, create simplified APK names for the release  
       if [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" ]; then
+        echo "Found release-unsigned APK, creating simplified name..."
         cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" "output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk"
       elif [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release.apk" ]; then
+        echo "Found release APK, creating simplified name..."
         cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release.apk" "output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk"
+      else
+        echo "No release APK found!"
       fi
-      
+
       if [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" ]; then
+        echo "Found debug APK, creating simplified name..."
         cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" "output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk"
+      else
+        echo "No debug APK found!"
       fi
-      
+
+      # Debug: List final APK files
+      echo "=== Final APK files for release ==="
+      find output/ -name "*.apk" -type f | sort
+
       # Create or update the release with GitHub CLI
       gh release create ${{ steps.version.outputs.tag_name }} \
         --title "LiveTV AndroidTV v${{ steps.version.outputs.tag_name }}" \

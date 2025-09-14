@@ -22,7 +22,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 enum class ScrapingSection(val displayName: String, val selector: String) {
-    FOOTBALL("Football", "td"),
+    FOOTBALL("Football", ":not(#upcoming)"),
     ALL("All Matches", ""),
     TOP_EVENTS_LIVE("Top Events LIVE", "#upcoming")
 }
@@ -68,10 +68,10 @@ class Scraper(private val context: Context) {
                     }
                 }
                 ScrapingSection.FOOTBALL -> {
-                    // For football section, we'll use the full document but filter matches later
-                    // This ensures pagination works correctly while still filtering for football
-                    Log.d("Scraper", "Using full document for football section - will filter matches by football keywords")
-                    doc
+                    val allExceptUpcoming = doc.clone()
+                    allExceptUpcoming.select("#upcoming").remove()
+                    Log.d("Scraper", "No specific football section found, using document without #upcoming section")
+                    allExceptUpcoming
                 }
             }
 

@@ -170,4 +170,26 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         visibleMatches.value = emptyList()
         loadMoreMatches()
     }
+
+    /**
+     * Refresh stream links for a specific match
+     */
+    fun refreshMatchLinks(match: Match) {
+        Log.d("ViewModel", "Refreshing links for match: ${match.teams}")
+        viewModelScope.launch {
+            // Set loading state for this specific match
+            updateMatchInList(match.copy(areLinksLoading = true, streamLinks = emptyList()))
+
+            try {
+                val links = repository.getStreamLinks(match.detailPageUrl)
+                Log.d("ViewModel", "Refreshed ${links.size} links for ${match.teams}")
+                // Update match with refreshed links
+                updateMatchInList(match.copy(streamLinks = links, areLinksLoading = false))
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Error refreshing links for ${match.teams}", e)
+                // Restore the match without loading state but keep existing links
+                updateMatchInList(match.copy(areLinksLoading = false))
+            }
+        }
+    }
 }

@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -85,7 +87,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
                     ) {
                         itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
-                            MatchItem(match = match)
+                            MatchItem(match = match, viewModel = viewModel)
                         }
 
                         item {
@@ -115,7 +117,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
 }
 
 @Composable
-fun MatchItem(match: Match) {
+fun MatchItem(match: Match, viewModel: MatchViewModel) {
     // Categorize links to determine card height
     val aceStreamLinks = match.streamLinks.filter { it.startsWith("acestream://") }
     val webStreamLinks = match.streamLinks.filter { !it.startsWith("acestream://") }
@@ -138,14 +140,39 @@ fun MatchItem(match: Match) {
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
-            // Team names - prominent display
-            Text(
-                text = match.teams.ifBlank { "Teams TBD" },
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 6.dp),
-                maxLines = 2,
-                minLines = 2 // Ensure consistent height
-            )
+            // Header row with team names and refresh button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                // Team names - prominent display
+                Text(
+                    text = match.teams.ifBlank { "Teams TBD" },
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    minLines = 2 // Ensure consistent height
+                )
+                
+                // Refresh button
+                IconButton(
+                    onClick = { viewModel.refreshMatchLinks(match) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh Links",
+                        tint = if (match.areLinksLoading) 
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             
             // Match Time and League/Competition info (avoid duplication) - made bigger
             val timeAndLeague = buildString {

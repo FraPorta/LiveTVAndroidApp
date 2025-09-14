@@ -568,31 +568,7 @@ class Scraper(private val context: Context) {
             
             // HTTP/HTTPS links validation
             url.startsWith("http://") || url.startsWith("https://") -> {
-                // Check for incomplete URLs like "https://cdn.live:" or "http://cdn.live"
-                val afterProtocol = when {
-                    url.startsWith("https://") -> url.substring(8)
-                    url.startsWith("http://") -> url.substring(7)
-                    else -> url
-                }
-                
-                // Enhanced validation for proper domains
-                if (afterProtocol.isBlank() || afterProtocol.length < 4) return@when false
-                
-                // Must not end with colon or have incomplete domain patterns
-                if (afterProtocol.endsWith(":") || afterProtocol.endsWith(".")) return@when false
-                
-                // Check for cdn.live pattern specifically (common broken pattern)
-                if (afterProtocol.matches(Regex("cdn\\.live[:\\.]*"))) return@when false
-                
-                // Must have valid domain structure
-                val domainPart = afterProtocol.split("/")[0].split("?")[0].split("#")[0]
-                val hasValidDomain = domainPart.contains(".") && 
-                                   !domainPart.startsWith(".") && 
-                                   domainPart.split(".").size >= 2 &&
-                                   domainPart.split(".").all { it.isNotEmpty() } &&
-                                   domainPart.length > 4
-                
-                hasValidDomain
+                validateHttpUrl(url)
             }
             
             // RTMP links
@@ -609,6 +585,34 @@ class Scraper(private val context: Context) {
             // Reject anything else that doesn't look like a proper URL
             else -> false
         }
+    }
+    
+    private fun validateHttpUrl(url: String): Boolean {
+        // Check for incomplete URLs like "https://cdn.live:" or "http://cdn.live"
+        val afterProtocol = when {
+            url.startsWith("https://") -> url.substring(8)
+            url.startsWith("http://") -> url.substring(7)
+            else -> return false
+        }
+        
+        // Enhanced validation for proper domains
+        if (afterProtocol.isBlank() || afterProtocol.length < 4) return false
+        
+        // Must not end with colon or have incomplete domain patterns
+        if (afterProtocol.endsWith(":") || afterProtocol.endsWith(".")) return false
+        
+        // Check for cdn.live pattern specifically (common broken pattern)
+        if (afterProtocol.matches(Regex("cdn\\.live[:\\.]*"))) return false
+        
+        // Must have valid domain structure
+        val domainPart = afterProtocol.split("/")[0].split("?")[0].split("#")[0]
+        val hasValidDomain = domainPart.contains(".") && 
+                           !domainPart.startsWith(".") && 
+                           domainPart.split(".").size >= 2 &&
+                           domainPart.split(".").all { it.isNotEmpty() } &&
+                           domainPart.length > 4
+        
+        return hasValidDomain
     }
 
     private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {

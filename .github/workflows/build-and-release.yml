@@ -139,10 +139,23 @@ jobs:
 
    - name: Create or Update Release with APKs
      if: ${{ steps.version.outputs.should_release == 'true' }}
+     env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
      run: |
+      # First, create simplified APK names for the release
+      if [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" ]; then
+        cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" "output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk"
+      elif [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release.apk" ]; then
+        cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release.apk" "output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk"
+      fi
+      
+      if [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" ]; then
+        cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" "output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk"
+      fi
+      
       # Create or update the release with GitHub CLI
-      gh release create ${{ steps.version.outputs.tag_name }} 
-        --title "LiveTV AndroidTV v${{ steps.version.outputs.tag_name }}" 
+      gh release create ${{ steps.version.outputs.tag_name }} \
+        --title "LiveTV AndroidTV v${{ steps.version.outputs.tag_name }}" \
         --notes "Automated release of LiveTV AndroidTV app v${{ steps.version.outputs.tag_name }}
 
       ## What's Included
@@ -153,38 +166,12 @@ jobs:
       Download the release APK to your Android TV device and install via ADB or file manager.
 
       ## Changes
-      See commit history for detailed changes since the last release." 
-        output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
-        output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
-        || gh release upload ${{ steps.version.outputs.tag_name }} 
-           output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
-           output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
-           --clobber
-     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-   - name: Upload Release Assets
-     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-     run: |
-      # Upload all APK files to the release
-      for apk_file in output/*.apk; do
-        if [ -f "$apk_file" ]; then
-          filename=$(basename "$apk_file")
-          echo "Uploading $filename..."
-          gh release upload "v${{ steps.version.outputs.version_name }}" "$apk_file" --clobber
-        fi
-      done
-
-      # Set the main APK as the primary download
-      if [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" ]; then
-        cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-release-unsigned.apk" "LiveTV-v${{ steps.version.outputs.version_name }}.apk"
-        gh release upload "v${{ steps.version.outputs.version_name }}" "LiveTV-v${{ steps.version.outputs.version_name }}.apk" --clobber
-      elif [ -f "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" ]; then
-        cp "output/LiveTV-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.commit_hash }}-debug.apk" "LiveTV-v${{ steps.version.outputs.version_name }}.apk"
-        gh release upload "v${{ steps.version.outputs.version_name }}" "LiveTV-v${{ steps.version.outputs.version_name }}.apk" --clobber
-      fi
+      See commit history for detailed changes since the last release." \
+        $(find output/ -name "*.apk" -type f) \
+        || (echo "Release already exists, uploading files..." && \
+            gh release upload ${{ steps.version.outputs.tag_name }} \
+               $(find output/ -name "*.apk" -type f) \
+               --clobber)
 
  notification:
   runs-on: ubuntu-latest

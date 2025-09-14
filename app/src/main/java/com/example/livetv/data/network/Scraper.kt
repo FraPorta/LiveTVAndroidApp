@@ -30,10 +30,17 @@ enum class ScrapingSection(val displayName: String, val selector: String) {
 class Scraper(private val context: Context) {
 
     /**
-     * Scrapes the main page to get a list of all upcoming matches, but doesn't
+     * Scrapes the main page to get a list of upcoming matches, but doesn't
      * fetch the stream links yet. This is designed to be fast.
+     * @param section The section to scrape from
+     * @param limit Maximum number of matches to return (0 = no limit)
+     * @param offset Starting position for pagination (0-based)
      */
-    suspend fun scrapeMatchList(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
+    suspend fun scrapeMatchList(
+        section: ScrapingSection = ScrapingSection.ALL,
+        limit: Int = 0,
+        offset: Int = 0
+    ): List<Match> = withContext(Dispatchers.IO) {
         val url = "https://livetv.sx/enx/allupcomingsports/1/"
         Log.d("Scraper", "Fetching initial match list from: $url")
         
@@ -61,22 +68,10 @@ class Scraper(private val context: Context) {
                     }
                 }
                 ScrapingSection.FOOTBALL -> {
-                    // For football section, look for table rows (td elements) that might contain football matches
-                    val footballElements = doc.select("td").filter { td ->
-                        val text = td.text().lowercase()
-                        text.contains("football") || text.contains("premier") || text.contains("liga") || 
-                        text.contains("bundesliga") || text.contains("serie") || text.contains("league")
-                    }
-                    if (footballElements.isNotEmpty()) {
-                        Log.d("Scraper", "Found ${footballElements.size} football-related elements")
-                        // Create a temporary document containing only football elements
-                        val tempDoc = Jsoup.parse("<html><body></body></html>")
-                        footballElements.forEach { tempDoc.body().appendChild(it.clone()) }
-                        tempDoc
-                    } else {
-                        Log.d("Scraper", "No football section found, falling back to full document")
-                        doc
-                    }
+                    // For football section, we'll use the full document but filter matches later
+                    // This ensures pagination works correctly while still filtering for football
+                    Log.d("Scraper", "Using full document for football section - will filter matches by football keywords")
+                    doc
                 }
             }
 
@@ -240,11 +235,55 @@ class Scraper(private val context: Context) {
             // Remove duplicates based on URL to avoid LazyColumn key conflicts
             val uniqueMatches = matches.distinctBy { it.detailPageUrl }
             
+            // Apply section-specific filtering
+            val filteredMatches = when (section) {
+                ScrapingSection.FOOTBALL -> {
+                    // Filter matches to only include football-related ones
+                    val footballMatches = uniqueMatches.filter { match ->
+                        val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
+                        combinedText.contains("football") || 
+                        combinedText.contains("soccer") ||
+                        combinedText.contains("premier") || 
+                        combinedText.contains("liga") ||
+                        combinedText.contains("bundesliga") || 
+                        combinedText.contains("serie a") ||
+                        combinedText.contains("ligue") ||
+                        combinedText.contains("champions league") ||
+                        combinedText.contains("europa league") ||
+                        combinedText.contains("uefa") ||
+                        combinedText.contains("fifa") ||
+                        combinedText.contains("world cup") ||
+                        match.sport.lowercase() == "football"
+                    }
+                    Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
+                    footballMatches
+                }
+                else -> uniqueMatches // No additional filtering for other sections
+            }
+            
+            // Apply pagination if requested
+            val paginatedMatches = if (limit > 0) {
+                val startIndex = offset.coerceAtLeast(0)
+                val endIndex = (startIndex + limit).coerceAtMost(filteredMatches.size)
+                if (startIndex < filteredMatches.size) {
+                    filteredMatches.subList(startIndex, endIndex)
+                } else {
+                    emptyList()
+                }
+            } else {
+                filteredMatches
+            }
+            
             Log.d("Scraper", "Successfully parsed ${matches.size} matches from main page.")
             if (matches.size != uniqueMatches.size) {
-                Log.d("Scraper", "Removed ${matches.size - uniqueMatches.size} duplicate matches. Final count: ${uniqueMatches.size}")
+                Log.d("Scraper", "Removed ${matches.size - uniqueMatches.size} duplicate matches.")
             }
-            uniqueMatches
+            
+            if (limit > 0) {
+                Log.d("Scraper", "Applied pagination - Offset: $offset, Limit: $limit, Returned: ${paginatedMatches.size} out of ${filteredMatches.size} total matches")
+            }
+            
+            paginatedMatches
         } catch (e: Exception) {
             Log.e("Scraper", "Error scraping match list", e)
             emptyList()

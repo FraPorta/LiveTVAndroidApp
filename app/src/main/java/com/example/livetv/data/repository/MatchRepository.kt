@@ -11,8 +11,12 @@ class MatchRepository(context: Context) {
     /**
      * Fetches the initial list of matches without their stream links.
      */
-    suspend fun getMatchList(section: ScrapingSection = ScrapingSection.ALL): List<Match> {
-        return scraper.scrapeMatchList(section)
+    suspend fun getMatchList(
+        section: ScrapingSection = ScrapingSection.ALL,
+        limit: Int = 0,
+        offset: Int = 0
+    ): List<Match> {
+        return scraper.scrapeMatchList(section, limit, offset)
     }
 
     /**

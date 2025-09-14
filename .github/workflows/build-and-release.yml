@@ -105,7 +105,6 @@ jobs:
       VERSION_NAME=$(grep -E "versionName\s*=" app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/')
       VERSION_CODE=$(grep -E "versionCode\s*=" app/build.gradle.kts | sed -E 's/.*versionCode\s*=\s*([0-9]+).*/\1/')
       COMMIT_HASH=$(git rev-parse --short HEAD)
-      BUILD_DATE=$(date +'%Y%m%d-%H%M')
       COMMIT_MSG=$(git log -1 --pretty=%B | head -1)
 
       # Create a clean tag name for releases
@@ -120,7 +119,6 @@ jobs:
       echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
       echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
       echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
-      echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
       echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
       echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
       echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
@@ -153,31 +151,7 @@ jobs:
       path: output/*.apk
       retention-days: 30
 
-   - name: Check if release exists
-     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-     id: check_release
-     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-     run: |
-      # Check if a release already exists for this version
-      EXISTING_RELEASE=$(gh release list --limit 100 | grep "v${{ steps.version.outputs.version_name }}" | head -1 || echo "")
-      if [ -n "$EXISTING_RELEASE" ]; then
-        echo "release_exists=true" >> $GITHUB_OUTPUT
-        RELEASE_TAG=$(echo "$EXISTING_RELEASE" | awk '{print $3}')
-        echo "existing_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
-      else
-        echo "release_exists=false" >> $GITHUB_OUTPUT
-        echo "existing_tag=" >> $GITHUB_OUTPUT
-      fi
 
-   - name: Delete existing release if exists
-     if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.check_release.outputs.release_exists == 'true'
-     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-     run: |
-      echo "Deleting existing release: ${{ steps.check_release.outputs.existing_tag }}"
-      gh release delete "${{ steps.check_release.outputs.existing_tag }}" --yes || true
-      git push --delete origin "${{ steps.check_release.outputs.existing_tag }}" || true
 
    - name: Create or Update Release with APKs
      if: ${{ steps.version.outputs.should_release == 'true' }}

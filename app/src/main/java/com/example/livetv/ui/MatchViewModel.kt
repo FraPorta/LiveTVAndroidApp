@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.livetv.data.model.Match
 import com.example.livetv.data.repository.MatchRepository
+import com.example.livetv.data.network.ScrapingSection
 import kotlinx.coroutines.launch
 
 const val INITIAL_LOAD_SIZE = 15
@@ -29,6 +30,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     // Current filter selections
     val selectedSport = mutableStateOf<String?>(null)
     val selectedLeague = mutableStateOf<String?>(null)
+    val selectedSection = mutableStateOf<ScrapingSection>(ScrapingSection.ALL)
 
     // The number of matches currently shown (after filtering)
     private var currentVisibleCount = 0
@@ -47,9 +49,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             isLoadingInitialList.value = true
             errorMessage.value = null
             try {
-                Log.d("ViewModel", "Calling repository.getMatchList()")
-                allMatches = repository.getMatchList()
-                Log.d("ViewModel", "Repository returned ${allMatches.size} matches.")
+                Log.d("ViewModel", "Calling repository.getMatchList() with section: ${selectedSection.value.displayName}")
+                allMatches = repository.getMatchList(selectedSection.value)
+                Log.d("ViewModel", "Repository returned ${allMatches.size} matches from ${selectedSection.value.displayName} section.")
                 
                 // Extract available sports and leagues for filtering
                 updateFilterOptions()
@@ -65,6 +67,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d("ViewModel", "loadInitialMatchList finished.")
             }
     }
+    }
+
+    /**
+     * Changes the scraping section and reloads the match list
+     */
+    fun changeSection(section: ScrapingSection) {
+        Log.d("ViewModel", "Changing section from ${selectedSection.value.displayName} to ${section.displayName}")
+        selectedSection.value = section
+        loadInitialMatchList()
     }
 
     fun loadMoreMatches() {

@@ -21,13 +21,19 @@ import kotlin.coroutines.resumeWithException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+enum class ScrapingSection(val displayName: String, val selector: String) {
+    ALL("All Matches", ""),
+    TOP_EVENTS_LIVE("Top Events LIVE", "#upcoming"),
+    FOOTBALL("Football (excluding Top Events)", "exclude_upcoming")
+}
+
 class Scraper(private val context: Context) {
 
     /**
      * Scrapes the main page to get a list of all upcoming matches, but doesn't
      * fetch the stream links yet. This is designed to be fast.
      */
-    suspend fun scrapeMatchList(): List<Match> = withContext(Dispatchers.IO) {
+    suspend fun scrapeMatchList(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
         val url = "https://livetv.sx/enx/allupcomingsports/1/"
         Log.d("Scraper", "Fetching initial match list from: $url")
         
@@ -38,24 +44,56 @@ class Scraper(private val context: Context) {
             
             val doc = Jsoup.parse(html)
             val matches = mutableListOf<Match>()
+            
+            Log.d("Scraper", "Scraping section: ${section.displayName}")
+
+            // Filter document by section if specified
+            val sectionDoc = when (section) {
+                ScrapingSection.ALL -> doc
+                ScrapingSection.TOP_EVENTS_LIVE -> {
+                    val upcomingSection = doc.select("#upcoming").first()
+                    if (upcomingSection != null) {
+                        Log.d("Scraper", "Found 'upcoming' section with ${upcomingSection.select("a").size} links")
+                        upcomingSection
+                    } else {
+                        Log.d("Scraper", "No 'upcoming' section found, falling back to full document")
+                        doc
+                    }
+                }
+                ScrapingSection.FOOTBALL -> {
+                    // For football section, exclude the #upcoming section to get everything else
+                    val upcomingSection = doc.select("#upcoming").first()
+                    if (upcomingSection != null) {
+                        Log.d("Scraper", "Removing 'upcoming' section to get football matches")
+                        // Clone the document and remove the upcoming section
+                        val clonedDoc = doc.clone()
+                        clonedDoc.select("#upcoming").remove()
+                        Log.d("Scraper", "Football section has ${clonedDoc.select("a[href*='/enx/event/']").size} potential links after removing upcoming section")
+                        clonedDoc
+                    } else {
+                        Log.d("Scraper", "No 'upcoming' section found, using full document for football")
+                        doc
+                    }
+                }
+            }
 
             // Try multiple selectors to find match links
-            var detailLinks = doc.select("a[href*='/enx/event/']")
-            Log.d("Scraper", "Found ${detailLinks.size} links with '/enx/event/' pattern")
+            var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
+            Log.d("Scraper", "Found ${detailLinks.size} links with '/enx/event/' pattern in ${section.displayName} section")
             
             if (detailLinks.isEmpty()) {
-                detailLinks = doc.select("a[href*='/event/']")
+                detailLinks = sectionDoc.select("a[href*='/event/']")
                 Log.d("Scraper", "Found ${detailLinks.size} links with '/event/' pattern")
             }
             
             if (detailLinks.isEmpty()) {
-                detailLinks = doc.select("a[href*='event']")
+                detailLinks = sectionDoc.select("a[href*='event']")
                 Log.d("Scraper", "Found ${detailLinks.size} links containing 'event'")
             }
             
             // Let's also check what links we do have
-            val allLinks = doc.select("a[href]")
-            Log.d("Scraper", "Total links found on page: ${allLinks.size}")
+            val allLinks = sectionDoc.select("a[href]")
+            Log.d("Scraper", "Total links found in section: ${allLinks.size}")
             
             if (allLinks.isNotEmpty() && detailLinks.isEmpty()) {
                 Log.d("Scraper", "Sample of first 10 links found:")
@@ -66,18 +104,17 @@ class Scraper(private val context: Context) {
             
             if (detailLinks.isEmpty()) {
                 // Check for tables or other structures that might contain matches
-                val tables = doc.select("table")
-                Log.d("Scraper", "Found ${tables.size} tables on the page")
+                val tables = sectionDoc.select("table")
+                Log.d("Scraper", "Found ${tables.size} tables in the section")
                 
-                val divs = doc.select("div")
-                Log.d("Scraper", "Found ${divs.size} div elements")
+                val divs = sectionDoc.select("div")
+                Log.d("Scraper", "Found ${divs.size} div elements in the section")
                 
                 // Look for any elements that might contain match information
-                val matchKeywords = doc.select(":contains(vs), :contains(VS), :contains(-), :contains(football), :contains(match)")
+                val matchKeywords = sectionDoc.select(":contains(vs), :contains(VS), :contains(-), :contains(football), :contains(match)")
                 Log.d("Scraper", "Found ${matchKeywords.size} elements containing match-related keywords")
                 
-                Log.d("Scraper", "Page title: ${doc.title()}")
-                Log.d("Scraper", "Page body text (first 500 chars): ${doc.body().text().take(500)}")
+                Log.d("Scraper", "Section text (first 500 chars): ${sectionDoc.text().take(500)}")
             }
 
             // Process the links we found

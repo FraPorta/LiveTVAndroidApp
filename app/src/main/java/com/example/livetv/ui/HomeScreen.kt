@@ -1,5 +1,6 @@
 package com.example.livetv.ui
 
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -14,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.livetv.data.model.Match
+import com.example.livetv.data.network.ScrapingSection
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val visibleMatches by viewModel.visibleMatches
@@ -64,7 +67,15 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                 }
             }
             else -> {
-                // Main content list
+                // Main content with section selector and match grid
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Section selection row
+                    SectionSelector(
+                        currentSection = viewModel.selectedSection.value,
+                        onSectionChange = { section -> viewModel.changeSection(section) },
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
+                    )
+                    
                     // Match grid - optimized for TV viewing
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 400.dp), // Adaptive columns based on screen size
@@ -96,6 +107,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -229,6 +241,46 @@ fun MatchItem(match: Match) {
                         "No streams found",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SectionSelector(
+    currentSection: ScrapingSection,
+    onSectionChange: (ScrapingSection) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "Select Section",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ScrapingSection.values().forEach { section ->
+                    FilterChip(
+                        onClick = { onSectionChange(section) },
+                        label = { 
+                            Text(
+                                text = section.displayName,
+                                style = MaterialTheme.typography.labelMedium
+                            ) 
+                        },
+                        selected = currentSection == section
                     )
                 }
             }

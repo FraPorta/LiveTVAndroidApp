@@ -36,7 +36,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     // Current filter selections
     val selectedSport = mutableStateOf<String?>(null)
     val selectedLeague = mutableStateOf<String?>(null)
-    val selectedSection = mutableStateOf<ScrapingSection>(ScrapingSection.ALL)
+    val selectedSection = mutableStateOf<ScrapingSection>(ScrapingSection.FOOTBALL)
 
     // The number of matches currently shown (after filtering)
     private var currentVisibleCount = 0

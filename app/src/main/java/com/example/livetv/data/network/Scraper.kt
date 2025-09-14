@@ -22,9 +22,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 enum class ScrapingSection(val displayName: String, val selector: String) {
+    FOOTBALL("Football", "td"),
     ALL("All Matches", ""),
-    TOP_EVENTS_LIVE("Top Events LIVE", "#upcoming"),
-    FOOTBALL("Football", "td")
+    TOP_EVENTS_LIVE("Top Events LIVE", "#upcoming")
 }
 
 class Scraper(private val context: Context) {

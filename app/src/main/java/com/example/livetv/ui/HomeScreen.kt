@@ -149,20 +149,26 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         }
 
                         item {
-                        // "Load More" button - compact for TV
+                        // Modern "Load More" button
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 16.dp),
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            Button(
-                                onClick = { viewModel.loadMoreMatches() },
-                                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .clickable { viewModel.loadMoreMatches() }
+                                    .padding(horizontal = 32.dp, vertical = 12.dp)
                             ) {
                                 Text(
                                     "Load More Matches",
-                                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
                         }
@@ -187,18 +193,24 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
     var showAceStreamDialog by remember { mutableStateOf(false) }
     var showWebStreamDialog by remember { mutableStateOf(false) }
     
-    // Dynamic height based on content - reduced since we removed fillMaxSize
-    val cardHeight = if (hasBothTypes) 240.dp else 180.dp
+    // Dynamic height based on content - modern approach
+    val cardHeight = if (hasBothTypes) 260.dp else 200.dp
     
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(cardHeight)
+            .height(cardHeight),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(16.dp)
         ) {
             // Header row with team names and refresh button
             Row(
@@ -217,19 +229,27 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                     minLines = 2 // Ensure consistent height
                 )
                 
-                // Refresh button
-                IconButton(
-                    onClick = { viewModel.refreshMatchLinks(match) },
-                    modifier = Modifier.size(32.dp)
+                // Modern refresh button
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = if (match.areLinksLoading) 
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) 
+                            else 
+                                MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .clickable { viewModel.refreshMatchLinks(match) }
+                        .padding(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "Refresh Links",
                         tint = if (match.areLinksLoading) 
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            MaterialTheme.colorScheme.primary
                         else 
                             MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -293,41 +313,58 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(if (hasBothTypes) 4.dp else 6.dp)
                     ) {
-                        // Acestream Section
+                        // Modern Acestream Section
                         if (aceStreamLinks.isNotEmpty()) {
-                            Text(
-                                text = "� ${aceStreamLinks.size} Acestream",
-                                style = if (hasBothTypes) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "🔗 ${aceStreamLinks.size} Acestream",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
                             
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 aceStreamLinks.take(3).forEachIndexed { index, link ->
-                                    Button(
-                                        onClick = { 
-                                            openUrlWithChooser(context, link)
-                                        },
-                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary,
-                                            contentColor = MaterialTheme.colorScheme.onPrimary
-                                        )
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable { openUrlWithChooser(context, link) }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
                                         Text(
                                             text = "ACE ${index + 1}",
-                                            style = MaterialTheme.typography.labelSmall
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimary
                                         )
                                     }
                                 }
                                 if (aceStreamLinks.size > 3) {
-                                    TextButton(
-                                        onClick = { showAceStreamDialog = true },
-                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable { showAceStreamDialog = true }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
                                         Text(
                                             text = "+${aceStreamLinks.size - 3}",
@@ -339,17 +376,31 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                             }
                         }
 
-                        // Web Streams Section
+                        // Modern Web Streams Section
                         if (webStreamLinks.isNotEmpty()) {
-                            Text(
-                                text = "🌐 ${webStreamLinks.size} Web Streams",
-                                style = if (hasBothTypes) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "🌐 ${webStreamLinks.size} Web Streams",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
                             
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 webStreamLinks.take(3).forEachIndexed { index, link ->
                                     val streamLabel = when {
@@ -361,28 +412,31 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                                         else -> "HTTP ${index + 1}"
                                     }
                                     
-                                    Button(
-                                        onClick = { 
-                                            openUrlWithChooser(context, link)
-                                        },
-                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.secondary,
-                                            contentColor = MaterialTheme.colorScheme.onSecondary
-                                        )
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = MaterialTheme.colorScheme.secondary,
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable { openUrlWithChooser(context, link) }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
                                         Text(
                                             text = streamLabel,
-                                            style = MaterialTheme.typography.labelSmall
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondary
                                         )
                                     }
                                 }
                                 if (webStreamLinks.size > 3) {
-                                    TextButton(
-                                        onClick = { showWebStreamDialog = true },
-                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable { showWebStreamDialog = true }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
                                         Text(
                                             text = "+${webStreamLinks.size - 3}",
@@ -676,15 +730,18 @@ fun UrlConfigHeader(
         editedUrl = currentUrl
     }
     
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(16.dp)
+            )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -703,28 +760,38 @@ fun UrlConfigHeader(
                 )
             }
             
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(
-                    onClick = { showEditDialog = true },
-                    modifier = Modifier.size(32.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { showEditDialog = true }
+                        .padding(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
                         contentDescription = "Edit URL",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(18.dp)
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
                 
-                IconButton(
-                    onClick = onResetUrl,
-                    modifier = Modifier.size(32.dp)
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onResetUrl() }
+                        .padding(8.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Reset to Default",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

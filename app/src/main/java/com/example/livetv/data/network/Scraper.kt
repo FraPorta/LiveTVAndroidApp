@@ -513,10 +513,22 @@ class Scraper(private val context: Context) {
 
             val allLinks = links.toList().distinct()
             
+            // Debug: Log all found URLs before filtering
+            Log.d("Scraper", "Found ${allLinks.size} URLs before filtering:")
+            allLinks.forEach { url ->
+                Log.d("Scraper", "URL: $url")
+            }
+            
             // Filter out invalid or incomplete URLs
             val finalLinks = allLinks.filter { link ->
-                isValidStreamUrl(link)
+                val isValid = isValidStreamUrl(link)
+                if (!isValid) {
+                    Log.d("Scraper", "FILTERED OUT invalid URL: $link")
+                }
+                isValid
             }
+            
+            Log.d("Scraper", "Final valid URLs: ${finalLinks.size}")
             
             Log.d("Scraper", "Found ${allLinks.size} total links, ${finalLinks.size} valid stream links for $detailPageUrl")
             if (allLinks.size != finalLinks.size) {
@@ -556,19 +568,31 @@ class Scraper(private val context: Context) {
             
             // HTTP/HTTPS links validation
             url.startsWith("http://") || url.startsWith("https://") -> {
-                // Check for incomplete URLs like "https://cdn.live:"
+                // Check for incomplete URLs like "https://cdn.live:" or "http://cdn.live"
                 val afterProtocol = when {
                     url.startsWith("https://") -> url.substring(8)
                     url.startsWith("http://") -> url.substring(7)
                     else -> url
                 }
                 
-                // Must have domain and not end with just a colon
-                afterProtocol.isNotBlank() && 
-                !afterProtocol.endsWith(":") && 
-                afterProtocol.contains(".") &&
-                !afterProtocol.startsWith(".") &&
-                afterProtocol.length > 3
+                // Enhanced validation for proper domains
+                if (afterProtocol.isBlank() || afterProtocol.length < 4) return@when false
+                
+                // Must not end with colon or have incomplete domain patterns
+                if (afterProtocol.endsWith(":") || afterProtocol.endsWith(".")) return@when false
+                
+                // Check for cdn.live pattern specifically (common broken pattern)
+                if (afterProtocol.matches(Regex("cdn\\.live[:\\.]*"))) return@when false
+                
+                // Must have valid domain structure
+                val domainPart = afterProtocol.split("/")[0].split("?")[0].split("#")[0]
+                val hasValidDomain = domainPart.contains(".") && 
+                                   !domainPart.startsWith(".") && 
+                                   domainPart.split(".").size >= 2 &&
+                                   domainPart.split(".").all { it.isNotEmpty() } &&
+                                   domainPart.length > 4
+                
+                hasValidDomain
             }
             
             // RTMP links

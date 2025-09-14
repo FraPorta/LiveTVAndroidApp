@@ -121,8 +121,12 @@ fun MatchItem(match: Match) {
     val webStreamLinks = match.streamLinks.filter { !it.startsWith("acestream://") }
     val hasBothTypes = aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
     
-    // Dynamic height based on content
-    val cardHeight = if (hasBothTypes) 260.dp else 200.dp
+    // State for popup dialogs
+    var showAceStreamDialog by remember { mutableStateOf(false) }
+    var showWebStreamDialog by remember { mutableStateOf(false) }
+    
+    // Dynamic height based on content - reduced since we removed fillMaxSize
+    val cardHeight = if (hasBothTypes) 240.dp else 180.dp
     
     Card(
         modifier = Modifier
@@ -131,7 +135,7 @@ fun MatchItem(match: Match) {
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(12.dp)
         ) {
             // Team names - prominent display
@@ -234,12 +238,17 @@ fun MatchItem(match: Match) {
                                     }
                                 }
                                 if (aceStreamLinks.size > 3) {
-                                    Text(
-                                        text = "+${aceStreamLinks.size - 3}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(4.dp),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    TextButton(
+                                        onClick = { showAceStreamDialog = true },
+                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "+${aceStreamLinks.size - 3}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -285,12 +294,17 @@ fun MatchItem(match: Match) {
                                     }
                                 }
                                 if (webStreamLinks.size > 3) {
-                                    Text(
-                                        text = "+${webStreamLinks.size - 3}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(4.dp),
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
+                                    TextButton(
+                                        onClick = { showWebStreamDialog = true },
+                                        modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "+${webStreamLinks.size - 3}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -307,6 +321,115 @@ fun MatchItem(match: Match) {
             }
         }
     }
+    
+    // Acestream Dialog
+    if (showAceStreamDialog) {
+        AlertDialog(
+            onDismissRequest = { showAceStreamDialog = false },
+            title = {
+                Text("🔗 All Acestream Links (${aceStreamLinks.size})")
+            },
+            text = {
+                LazyColumn {
+                    itemsIndexed(aceStreamLinks) { index, link ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { 
+                                    println("Opening acestream: $link")
+                                    showAceStreamDialog = false
+                                },
+                                modifier = Modifier.height(36.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Text(
+                                    text = "ACE ${index + 1}",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            Text(
+                                text = link.take(50) + if (link.length > 50) "..." else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAceStreamDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+    
+    // Web Stream Dialog
+    if (showWebStreamDialog) {
+        AlertDialog(
+            onDismissRequest = { showWebStreamDialog = false },
+            title = {
+                Text("🌐 All Web Stream Links (${webStreamLinks.size})")
+            },
+            text = {
+                LazyColumn {
+                    itemsIndexed(webStreamLinks) { index, link ->
+                        val streamLabel = when {
+                            link.contains(".m3u8") -> "M3U8 ${index + 1}"
+                            link.startsWith("rtmp") -> "RTMP ${index + 1}"
+                            link.contains("youtube.com") || link.contains("youtu.be") -> "YT ${index + 1}"
+                            link.contains("twitch.tv") -> "Twitch ${index + 1}"
+                            link.contains("webplayer") -> "Web ${index + 1}"
+                            else -> "HTTP ${index + 1}"
+                        }
+                        
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { 
+                                    println("Opening web stream: $link")
+                                    showWebStreamDialog = false
+                                },
+                                modifier = Modifier.height(36.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondary,
+                                    contentColor = MaterialTheme.colorScheme.onSecondary
+                                )
+                            ) {
+                                Text(
+                                    text = streamLabel,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            Text(
+                                text = link.take(50) + if (link.length > 50) "..." else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showWebStreamDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -322,13 +445,7 @@ fun SectionSelector(
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Select Section",
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
+        ) { 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {

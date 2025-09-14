@@ -25,4 +25,25 @@ class MatchRepository(context: Context) {
     suspend fun getStreamLinks(detailPageUrl: String): List<String> {
         return scraper.fetchStreamLinks(detailPageUrl)
     }
+    
+    /**
+     * Gets the current base URL being used for scraping
+     */
+    fun getBaseUrl(): String {
+        return scraper.getBaseUrl()
+    }
+    
+    /**
+     * Updates the base URL used for scraping
+     */
+    fun updateBaseUrl(newUrl: String) {
+        scraper.updateBaseUrl(newUrl)
+    }
+    
+    /**
+     * Resets the base URL to the default
+     */
+    fun resetBaseUrl() {
+        scraper.resetBaseUrl()
+    }
 }

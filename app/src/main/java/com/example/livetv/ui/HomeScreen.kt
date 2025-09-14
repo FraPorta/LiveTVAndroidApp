@@ -6,6 +6,9 @@ import android.net.Uri
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -13,11 +16,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.livetv.data.model.Match
@@ -73,14 +80,61 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                 }
             }
             else -> {
-                // Main content with section selector and match grid
+                // Main content with responsive header and match grid
+                val configuration = LocalConfiguration.current
+                val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
+                
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Section selection row
-                    SectionSelector(
-                        currentSection = viewModel.selectedSection.value,
-                        onSectionChange = { section -> viewModel.changeSection(section) },
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
-                    )
+                    if (isCompactScreen) {
+                        // Smartphone layout - separate rows
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // URL configuration header
+                            UrlConfigHeader(
+                                currentUrl = viewModel.getBaseUrl(),
+                                onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
+                                onResetUrl = { viewModel.resetBaseUrl() },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            
+                            // Section selector
+                            SectionSelector(
+                                currentSection = viewModel.selectedSection.value,
+                                onSectionChange = { section -> viewModel.changeSection(section) },
+                                modifier = Modifier.fillMaxWidth(),
+                                isCompact = false
+                            )
+                        }
+                    } else {
+                        // Tablet/TV layout - same row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // URL configuration header (takes up more space)
+                            UrlConfigHeader(
+                                currentUrl = viewModel.getBaseUrl(),
+                                onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
+                                onResetUrl = { viewModel.resetBaseUrl() },
+                                modifier = Modifier.weight(2f)
+                            )
+                            
+                            // Section selector (takes up less space)
+                            SectionSelector(
+                                currentSection = viewModel.selectedSection.value,
+                                onSectionChange = { section -> viewModel.changeSection(section) },
+                                modifier = Modifier.weight(1f),
+                                isCompact = true
+                            )
+                        }
+                    }
                     
                     // Match grid - optimized for TV viewing
                     LazyVerticalGrid(
@@ -468,29 +522,103 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
 fun SectionSelector(
     currentSection: ScrapingSection,
     onSectionChange: (ScrapingSection) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) { 
+    if (isCompact) {
+        // Modern compact version for horizontal layout
+        Column(modifier = modifier) {
+            Text(
+                text = "Section",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            
+            // Modern segmented button style
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 ScrapingSection.values().forEach { section ->
-                    FilterChip(
-                        onClick = { onSectionChange(section) },
-                        label = { 
-                            Text(
-                                text = section.displayName,
-                                style = MaterialTheme.typography.labelMedium
-                            ) 
-                        },
-                        selected = currentSection == section
+                    val isSelected = currentSection == section
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                color = if (isSelected) 
+                                    MaterialTheme.colorScheme.primary 
+                                else 
+                                    Color.Transparent,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onSectionChange(section) }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = section.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSelected) 
+                                MaterialTheme.colorScheme.onPrimary 
+                            else 
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    } else {
+        // Modern full version for vertical layout
+        Column(modifier = modifier.fillMaxWidth()) {
+            Text(
+                text = "Select Section",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            
+            // Modern button group style
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(20.dp)
                     )
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                ScrapingSection.values().forEach { section ->
+                    val isSelected = currentSection == section
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                color = if (isSelected) 
+                                    MaterialTheme.colorScheme.primary 
+                                else 
+                                    Color.Transparent,
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .clickable { onSectionChange(section) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = section.displayName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isSelected) 
+                                MaterialTheme.colorScheme.onPrimary 
+                            else 
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -529,5 +657,127 @@ private fun openUrlWithChooser(context: Context, url: String) {
             // If that also fails, we could show a toast or log the error
             android.util.Log.e("HomeScreen", "Failed to open URL: $url", e2)
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UrlConfigHeader(
+    currentUrl: String,
+    onUrlUpdate: (String) -> Unit,
+    onResetUrl: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editedUrl by remember { mutableStateOf(currentUrl) }
+    
+    // Update editedUrl when currentUrl changes
+    LaunchedEffect(currentUrl) {
+        editedUrl = currentUrl
+    }
+    
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Scraping Source",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                )
+                Text(
+                    text = currentUrl,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                IconButton(
+                    onClick = { showEditDialog = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit URL",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                
+                IconButton(
+                    onClick = onResetUrl,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Reset to Default",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+    
+    // Edit URL Dialog
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showEditDialog = false 
+                editedUrl = currentUrl // Reset to current URL if cancelled
+            },
+            title = { Text("Edit Scraping URL") },
+            text = {
+                Column {
+                    Text(
+                        "Enter the base URL for scraping match data:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = editedUrl,
+                        onValueChange = { editedUrl = it },
+                        label = { Text("Base URL") },
+                        placeholder = { Text("https://livetv.sx/enx/allupcomingsports/1/") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (editedUrl.isNotBlank() && editedUrl != currentUrl) {
+                            onUrlUpdate(editedUrl)
+                        }
+                        showEditDialog = false
+                    }
+                ) {
+                    Text("Update")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showEditDialog = false
+                        editedUrl = currentUrl
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

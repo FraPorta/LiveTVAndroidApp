@@ -280,4 +280,29 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    
+    /**
+     * Gets the current base URL being used for scraping
+     */
+    fun getBaseUrl(): String {
+        return repository.getBaseUrl()
+    }
+    
+    /**
+     * Updates the base URL and reloads the match list
+     */
+    fun updateBaseUrl(newUrl: String) {
+        repository.updateBaseUrl(newUrl)
+        // Reload the match list with the new URL
+        loadInitialMatchList()
+    }
+    
+    /**
+     * Resets the base URL to default and reloads the match list
+     */
+    fun resetBaseUrl() {
+        repository.resetBaseUrl()
+        // Reload the match list with the default URL
+        loadInitialMatchList()
+    }
 }

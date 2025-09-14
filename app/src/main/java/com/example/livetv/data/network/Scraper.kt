@@ -20,6 +20,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import com.example.livetv.data.preferences.UrlPreferences
 
 enum class ScrapingSection(val displayName: String, val selector: String) {
     FOOTBALL("Football", ":not(#upcoming)"),
@@ -28,6 +29,8 @@ enum class ScrapingSection(val displayName: String, val selector: String) {
 }
 
 class Scraper(private val context: Context) {
+
+    private val urlPreferences = UrlPreferences(context)
 
     /**
      * Scrapes the main page to get a list of upcoming matches, but doesn't
@@ -41,13 +44,12 @@ class Scraper(private val context: Context) {
         limit: Int = 0,
         offset: Int = 0
     ): List<Match> = withContext(Dispatchers.IO) {
-        val url = "https://livetv.sx/enx/allupcomingsports/1/"
+        val url = urlPreferences.getBaseUrl()
         Log.d("Scraper", "Fetching initial match list from: $url")
         
         try {
-            // Try the mobile version of the site which might be less complex
-            val mobileUrl = "https://livetv.sx/enx/allupcomingsports/1/"
-            val html = fetchHtmlWithOkHttp(mobileUrl)
+            // Use the configured URL from preferences
+            val html = fetchHtmlWithOkHttp(url)
             
             val doc = Jsoup.parse(html)
             val matches = mutableListOf<Match>()
@@ -792,5 +794,26 @@ class Scraper(private val context: Context) {
                 webView.loadUrl(url)
             }
         }
+    }
+    
+    /**
+     * Gets the current base URL being used for scraping
+     */
+    fun getBaseUrl(): String {
+        return urlPreferences.getBaseUrl()
+    }
+    
+    /**
+     * Updates the base URL used for scraping
+     */
+    fun updateBaseUrl(newUrl: String) {
+        urlPreferences.setBaseUrl(newUrl)
+    }
+    
+    /**
+     * Resets the base URL to the default
+     */
+    fun resetBaseUrl() {
+        urlPreferences.resetToDefault()
     }
 }

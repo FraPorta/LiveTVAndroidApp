@@ -42,13 +42,13 @@ jobs:
    - name: Cache Gradle dependencies
      uses: actions/cache@v4
      with:
-       path: |
-         ~/.gradle/caches
-         ~/.gradle/wrapper
-       key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-       restore-keys: |
-         ${{ runner.os }}-gradle-
-   
+      path: |
+       ~/.gradle/caches
+       ~/.gradle/wrapper
+      key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+      restore-keys: |
+       ${{ runner.os }}-gradle-
+
    - name: Make gradlew executable
      run: chmod +x gradlew
 
@@ -140,28 +140,28 @@ jobs:
    - name: Create or Update Release with APKs
      if: ${{ steps.version.outputs.should_release == 'true' }}
      run: |
-       # Create or update the release with GitHub CLI
-       gh release create ${{ steps.version.outputs.tag_name }} 
-         --title "LiveTV AndroidTV v${{ steps.version.outputs.tag_name }}" 
-         --notes "Automated release of LiveTV AndroidTV app v${{ steps.version.outputs.tag_name }}
+      # Create or update the release with GitHub CLI
+      gh release create ${{ steps.version.outputs.tag_name }} 
+        --title "LiveTV AndroidTV v${{ steps.version.outputs.tag_name }}" 
+        --notes "Automated release of LiveTV AndroidTV app v${{ steps.version.outputs.tag_name }}
 
-       ## What's Included
-       - **LiveTV-${{ steps.version.outputs.tag_name }}-release.apk** - Production release build  
-       - **LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk** - Debug build for testing
-       
-       ## Installation
-       Download the release APK to your Android TV device and install via ADB or file manager.
-       
-       ## Changes
-       See commit history for detailed changes since the last release." 
-         output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
-         output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
-         || gh release upload ${{ steps.version.outputs.tag_name }} 
-            output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
-            output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
-            --clobber
+      ## What's Included
+      - **LiveTV-${{ steps.version.outputs.tag_name }}-release.apk** - Production release build  
+      - **LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk** - Debug build for testing
+
+      ## Installation
+      Download the release APK to your Android TV device and install via ADB or file manager.
+
+      ## Changes
+      See commit history for detailed changes since the last release." 
+        output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
+        output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
+        || gh release upload ${{ steps.version.outputs.tag_name }} 
+           output/LiveTV-${{ steps.version.outputs.tag_name }}-release.apk 
+           output/LiveTV-${{ steps.version.outputs.tag_name }}-debug.apk 
+           --clobber
      env:
-       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
    - name: Upload Release Assets
      if: github.event_name == 'push' && github.ref == 'refs/heads/master'

@@ -28,6 +28,9 @@ on:
 jobs:
  build:
   runs-on: ubuntu-latest
+  permissions:
+    contents: write
+    actions: read
 
   steps:
    - name: Checkout repository
@@ -56,7 +59,7 @@ jobs:
      run: ./gradlew clean
 
    - name: Build debug APK
-     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'debug')
+     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'debug') || github.event_name == 'push'
      run: ./gradlew assembleDebug
 
    - name: Build release APK

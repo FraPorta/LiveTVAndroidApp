@@ -24,7 +24,7 @@ import okhttp3.Request
 enum class ScrapingSection(val displayName: String, val selector: String) {
     ALL("All Matches", ""),
     TOP_EVENTS_LIVE("Top Events LIVE", "#upcoming"),
-    FOOTBALL("Football (excluding Top Events)", "exclude_upcoming")
+    FOOTBALL("Football", "td")
 }
 
 class Scraper(private val context: Context) {
@@ -61,17 +61,20 @@ class Scraper(private val context: Context) {
                     }
                 }
                 ScrapingSection.FOOTBALL -> {
-                    // For football section, exclude the #upcoming section to get everything else
-                    val upcomingSection = doc.select("#upcoming").first()
-                    if (upcomingSection != null) {
-                        Log.d("Scraper", "Removing 'upcoming' section to get football matches")
-                        // Clone the document and remove the upcoming section
-                        val clonedDoc = doc.clone()
-                        clonedDoc.select("#upcoming").remove()
-                        Log.d("Scraper", "Football section has ${clonedDoc.select("a[href*='/enx/event/']").size} potential links after removing upcoming section")
-                        clonedDoc
+                    // For football section, look for table rows (td elements) that might contain football matches
+                    val footballElements = doc.select("td").filter { td ->
+                        val text = td.text().lowercase()
+                        text.contains("football") || text.contains("premier") || text.contains("liga") || 
+                        text.contains("bundesliga") || text.contains("serie") || text.contains("league")
+                    }
+                    if (footballElements.isNotEmpty()) {
+                        Log.d("Scraper", "Found ${footballElements.size} football-related elements")
+                        // Create a temporary document containing only football elements
+                        val tempDoc = Jsoup.parse("<html><body></body></html>")
+                        footballElements.forEach { tempDoc.body().appendChild(it.clone()) }
+                        tempDoc
                     } else {
-                        Log.d("Scraper", "No 'upcoming' section found, using full document for football")
+                        Log.d("Scraper", "No football section found, falling back to full document")
                         doc
                     }
                 }
@@ -429,21 +432,19 @@ class Scraper(private val context: Context) {
             val twitchLinks = doc.select("a[href*='twitch.tv/']").map { it.attr("href") }
             links.addAll(twitchLinks)
 
-            // 6. Generic HTTP/HTTPS streaming links
-            val broadcastTables = doc.select("table.broadcasts, table[width='100%'][cellspacing='1'][cellpadding='3']")
-            val httpLinks = broadcastTables.select("a[href^=http]")
+            // 6. Webplayer links (protocol-relative URLs starting with //)
+            val webplayerLinks = doc.select("a[href*='webplayer']")
                 .map { it.attr("href") }
-                .filter { url ->
-                    // Filter for likely streaming URLs
-                    url.contains("stream", ignoreCase = true) ||
-                    url.contains("live", ignoreCase = true) ||
-                    url.contains("watch", ignoreCase = true) ||
-                    url.contains(".ts") ||
-                    url.contains(".flv") ||
-                    url.contains(".mp4") ||
-                    url.contains("player")
+                .map { url ->
+                    // Convert protocol-relative URLs to HTTPS
+                    if (url.startsWith("//")) {
+                        "https:$url"
+                    } else {
+                        url
+                    }
                 }
-            links.addAll(httpLinks)
+            links.addAll(webplayerLinks)
+            Log.d("Scraper", "Found ${webplayerLinks.size} webplayer links: ${webplayerLinks.joinToString()}")
 
             // 7. Links in JavaScript or embedded content
             val scriptTags = doc.select("script")
@@ -492,11 +493,21 @@ class Scraper(private val context: Context) {
             val htmlRegexPatterns = listOf(
                 "acestream://[a-zA-Z0-9]+".toRegex(),
                 """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE),
-                """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE)
+                """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE),
+                """(?:https?:)?//[^\s"'<>]+webplayer[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
             )
             
             htmlRegexPatterns.forEach { regex ->
-                val htmlFound = regex.findAll(html).map { it.value }
+                val htmlFound = regex.findAll(html)
+                    .map { it.value }
+                    .map { url ->
+                        // Convert protocol-relative URLs to HTTPS
+                        if (url.startsWith("//")) {
+                            "https:$url"
+                        } else {
+                            url
+                        }
+                    }
                 links.addAll(htmlFound)
             }
 

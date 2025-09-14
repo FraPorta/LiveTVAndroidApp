@@ -1,5 +1,8 @@
 package com.example.livetv.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.livetv.data.model.Match
@@ -118,6 +122,8 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
 
 @Composable
 fun MatchItem(match: Match, viewModel: MatchViewModel) {
+    val context = LocalContext.current
+    
     // Categorize links to determine card height
     val aceStreamLinks = match.streamLinks.filter { it.startsWith("acestream://") }
     val webStreamLinks = match.streamLinks.filter { !it.startsWith("acestream://") }
@@ -248,8 +254,7 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                                 aceStreamLinks.take(3).forEachIndexed { index, link ->
                                     Button(
                                         onClick = { 
-                                            // TODO: Open acestream link
-                                            println("Opening acestream: $link")
+                                            openUrlWithChooser(context, link)
                                         },
                                         modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
@@ -304,8 +309,7 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                                     
                                     Button(
                                         onClick = { 
-                                            // TODO: Open web stream link
-                                            println("Opening web stream: $link")
+                                            openUrlWithChooser(context, link)
                                         },
                                         modifier = Modifier.height(if (hasBothTypes) 28.dp else 32.dp),
                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
@@ -368,7 +372,7 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                         ) {
                             Button(
                                 onClick = { 
-                                    println("Opening acestream: $link")
+                                    openUrlWithChooser(context, link)
                                     showAceStreamDialog = false
                                 },
                                 modifier = Modifier.height(36.dp),
@@ -427,7 +431,7 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                         ) {
                             Button(
                                 onClick = { 
-                                    println("Opening web stream: $link")
+                                    openUrlWithChooser(context, link)
                                     showWebStreamDialog = false
                                 },
                                 modifier = Modifier.height(36.dp),
@@ -489,6 +493,41 @@ fun SectionSelector(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Helper function to open a URL with an intent chooser
+ */
+private fun openUrlWithChooser(context: Context, url: String) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            // Add flags to ensure compatibility
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            // For acestream links, we might want to set specific MIME type
+            if (url.startsWith("acestream://")) {
+                setDataAndType(Uri.parse(url), "application/x-acestream")
+            }
+        }
+        
+        // Create chooser to let user pick which app to use
+        val chooserIntent = Intent.createChooser(intent, "Open stream with...").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        
+        context.startActivity(chooserIntent)
+    } catch (e: Exception) {
+        // If something goes wrong, try with a simple intent
+        try {
+            val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(fallbackIntent)
+        } catch (e2: Exception) {
+            // If that also fails, we could show a toast or log the error
+            android.util.Log.e("HomeScreen", "Failed to open URL: $url", e2)
         }
     }
 }

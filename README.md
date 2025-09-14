@@ -62,22 +62,27 @@ cd LiveTVAndroidApp
 
 ### Creating Releases
 ```bash
-# Use the release script
-./release.sh 1.2.0 "New features and improvements"
+# Simply update version in app/build.gradle.kts and push!
+git add .
+git commit -m "Add new features and improvements"
+git push origin master
+# 🎉 Release is automatically created!
 
-# Or manually create tag
+# Optional: Create tagged releases for milestones
 git tag v1.2.0
 git push origin v1.2.0
 ```
 
 ## 🔄 Automated Deployment
 
-This project uses GitHub Actions for automated builds and releases:
+This project uses GitHub Actions for **fully automated** releases:
 
-- **Push to `master`**: Automatic build and release
-- **Tagged releases**: Formal version releases (e.g., `v1.0.0`)
-- **Pull requests**: Build verification
-- **Manual triggers**: On-demand builds
+- **🚀 Push to `master`**: Automatically creates releases with proper version numbers
+- **🏷️ Tagged releases**: Optional milestone releases (e.g., `v2.0.0`)  
+- **🔍 Pull requests**: Build verification before merge
+- **🛠️ Manual triggers**: On-demand builds for testing
+
+**✨ No manual release process needed - just push your code!**
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment information.
 

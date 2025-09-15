@@ -66,17 +66,28 @@ jobs:
      run: |
       # Create keystore directory
       mkdir -p app/keystore
-
+      
       # Decode and save the keystore file
-      echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > app/keystore/release.keystore.jks
-
+      echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > app/keystore/release.jks
+      
+      # Verify keystore was decoded correctly
+      ls -la app/keystore/release.jks
+      echo "Keystore file size: $(wc -c < app/keystore/release.jks) bytes"
+      
+      # Test keystore accessibility (without showing passwords)
+      echo "Testing keystore format..."
+      if keytool -list -keystore app/keystore/release.jks -storepass "${{ secrets.RELEASE_STORE_PASSWORD }}" -alias "${{ secrets.RELEASE_KEY_ALIAS }}" > /dev/null 2>&1; then
+        echo "✅ Keystore is accessible and valid"
+      else
+        echo "❌ Keystore test failed"
+        exit 1
+      fi
+      
       # Set up gradle properties for release signing
-      echo "RELEASE_STORE_FILE=app/keystore/release.keystore.jks" >> gradle.properties
+      echo "RELEASE_STORE_FILE=app/keystore/release.jks" >> gradle.properties
       echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> gradle.properties
       echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> gradle.properties
-      echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> gradle.properties
-
-   - name: Auto-increment version
+      echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> gradle.properties   - name: Auto-increment version
      if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
      run: |
       # Extract current version

@@ -7,7 +7,7 @@ echo "=============================================="
 echo
 
 # Check if keystore exists
-KEYSTORE_FILE="app/keystore/release.keystore.jks"
+KEYSTORE_FILE="app/keystore/release.jks"
 if [ ! -f "$KEYSTORE_FILE" ]; then
     echo "❌ Keystore file not found at: $KEYSTORE_FILE"
     echo "Please create the keystore first using Android Studio"

@@ -136,6 +136,7 @@ class UpdateManager(private val context: Context) {
                 Uri.fromFile(apkFile)
             }
             
+            // Installation method
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -144,9 +145,14 @@ class UpdateManager(private val context: Context) {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                     addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 }
+                
+                // Add flags to allow replacing existing app
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             
             context.startActivity(intent)
+            
         } catch (e: Exception) {
             throw Exception("Failed to install update: ${e.message}")
         }

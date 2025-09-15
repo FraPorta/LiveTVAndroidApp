@@ -3,6 +3,9 @@ package com.example.livetv.data.updater
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.content.pm.PackageManager
+import android.os.Build
+import java.security.MessageDigest
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,20 +51,22 @@ class UpdateManager(private val context: Context) {
             val latestRelease = fetchLatestRelease()
             
             if (latestRelease != null && isNewerVersion(latestRelease.tag_name, currentVersion)) {
-                val releaseApk = latestRelease.assets.find { asset ->
-                    asset.name.endsWith("-release.apk") && 
-                    !asset.name.contains("debug", ignoreCase = true)
+                // Prefer release apk; fallback to debug if release not present
+                val selectedApk = latestRelease.assets.find { asset ->
+                    asset.name.endsWith("-release.apk") && !asset.name.contains("debug", ignoreCase = true)
+                } ?: latestRelease.assets.find { asset ->
+                    asset.name.endsWith("-debug.apk")
                 }
-                
-                if (releaseApk != null) {
+
+                if (selectedApk != null) {
                     UpdateResult.Available(
                         version = latestRelease.tag_name,
                         description = latestRelease.body,
-                        downloadUrl = releaseApk.browser_download_url,
-                        fileSize = releaseApk.size
+                        downloadUrl = selectedApk.browser_download_url,
+                        fileSize = selectedApk.size
                     )
                 } else {
-                    UpdateResult.Error("No suitable APK found in latest release")
+                    UpdateResult.Error("No suitable APK asset (release/debug) found in latest GitHub release")
                 }
             } else {
                 UpdateResult.UpToDate
@@ -125,6 +130,11 @@ class UpdateManager(private val context: Context) {
      */
     fun installUpdate(apkFile: File) {
         try {
+            // Verify signing matches before prompting install
+            if (!signaturesMatch(apkFile)) {
+                throw Exception("Signature mismatch: installed app and downloaded APK signed with different keystores. Uninstall current app or publish a release signed with the same key.")
+            }
+            
             // Use FileProvider for Android 7.0+
             val apkUri: Uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                 FileProvider.getUriForFile(
@@ -206,6 +216,55 @@ class UpdateManager(private val context: Context) {
             return false // Versions are equal
         } catch (e: Exception) {
             return false
+        }
+    }
+
+    // ----- Signature verification helpers -----
+    private fun signaturesMatch(apkFile: File): Boolean {
+        val current = getInstalledSignatures()
+        val downloaded = getArchiveSignatures(apkFile)
+        if (current.isEmpty() || downloaded.isEmpty()) return true // If we cannot determine, allow (legacy behavior)
+        return current.any { it in downloaded }
+    }
+
+    private fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it) }
+
+    @Suppress("DEPRECATION")
+    private fun getInstalledSignatures(): List<String> {
+        return try {
+            val pm = context.packageManager
+            val pkgName = context.packageName
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+            val info = pm.getPackageInfo(pkgName, flags)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val signingInfo = info.signingInfo ?: return emptyList()
+                val sigs = if (signingInfo.hasMultipleSigners()) signingInfo.apkContentsSigners else signingInfo.signingCertificateHistory
+                sigs.map { digest(it.toByteArray()) }
+            } else {
+                info.signatures?.map { digest(it.toByteArray()) } ?: emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getArchiveSignatures(apkFile: File): List<String> {
+        return try {
+            val pm = context.packageManager
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+            val info = pm.getPackageArchiveInfo(apkFile.path, flags) ?: return emptyList()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val signingInfo = info.signingInfo ?: return emptyList()
+                val sigs = if (signingInfo.hasMultipleSigners()) signingInfo.apkContentsSigners else signingInfo.signingCertificateHistory
+                sigs.map { digest(it.toByteArray()) }
+            } else {
+                info.signatures?.map { digest(it.toByteArray()) } ?: emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }

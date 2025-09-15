@@ -92,8 +92,6 @@ For signed releases, set up your release keystore:
 # - RELEASE_KEY_PASSWORD
 ```
 
-See [KEYSTORE_SETUP.md](KEYSTORE_SETUP.md) for detailed setup instructions.
-
 ### Creating Releases
 ```bash
 # Simply update version in app/build.gradle.kts and push!

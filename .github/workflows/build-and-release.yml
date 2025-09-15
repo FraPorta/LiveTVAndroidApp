@@ -35,6 +35,9 @@ jobs:
   steps:
    - name: Checkout repository
      uses: actions/checkout@v4
+     with:
+       token: ${{ secrets.GITHUB_TOKEN }}
+       fetch-depth: 0
 
    - name: Set up JDK 17
      uses: actions/setup-java@v4
@@ -91,12 +94,22 @@ jobs:
       sed -i "s/versionCode = $CURRENT_VERSION_CODE/versionCode = $NEW_VERSION_CODE/" app/build.gradle.kts
       sed -i "s/versionName = \"$CURRENT_VERSION_NAME\"/versionName = \"$NEW_VERSION_NAME\"/" app/build.gradle.kts
 
-      # Commit the version update
-      git config --local user.email "action@github.com"
-      git config --local user.name "GitHub Action"
-      git add app/build.gradle.kts
-      git commit -m "Auto-increment version to $NEW_VERSION_NAME [skip ci]" || true
-      git push || true
+      # Commit the version update back to the repository
+      git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      git config --local user.name "github-actions[bot]"
+      
+      # Check if there are changes to commit
+      if git diff --quiet app/build.gradle.kts; then
+        echo "No version changes to commit"
+      else
+        echo "Committing version update..."
+        git add app/build.gradle.kts
+        git commit -m "🚀 Auto-increment version to $NEW_VERSION_NAME [skip ci]"
+        
+        # Push the commit back to the repository
+        git push origin HEAD:master
+        echo "Version update committed and pushed successfully"
+      fi
 
    - name: Get version info
      id: version
@@ -150,8 +163,6 @@ jobs:
       name: LiveTV-APKs-${{ steps.version.outputs.tag_name }}
       path: output/*.apk
       retention-days: 30
-
-
 
    - name: Create or Update Release with APKs
      if: ${{ steps.version.outputs.should_release == 'true' }}

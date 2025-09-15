@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,8 +28,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.livetv.data.model.Match
 import com.example.livetv.data.network.ScrapingSection
+import com.example.livetv.ui.updater.UpdateDialog
+import com.example.livetv.ui.updater.UpdateViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,6 +42,17 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val visibleMatches by viewModel.visibleMatches
     val isLoading by viewModel.isLoadingInitialList
     val errorMessage by viewModel.errorMessage
+    
+    // Update functionality
+    val context = LocalContext.current
+    val updateViewModel: UpdateViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                UpdateViewModel(context)
+            }
+        }
+    )
+    var showUpdateDialog by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -98,6 +115,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 currentUrl = viewModel.getBaseUrl(),
                                 onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
                                 onResetUrl = { viewModel.resetBaseUrl() },
+                                onShowUpdateDialog = { showUpdateDialog = true },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             
@@ -123,6 +141,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 currentUrl = viewModel.getBaseUrl(),
                                 onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
                                 onResetUrl = { viewModel.resetBaseUrl() },
+                                onShowUpdateDialog = { showUpdateDialog = true },
                                 modifier = Modifier.weight(2f)
                             )
                             
@@ -177,6 +196,14 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                 }
             }
         }
+    }
+    
+    // Update Dialog
+    if (showUpdateDialog) {
+        UpdateDialog(
+            updateViewModel = updateViewModel,
+            onDismiss = { showUpdateDialog = false }
+        )
     }
 }
 
@@ -720,6 +747,7 @@ fun UrlConfigHeader(
     currentUrl: String,
     onUrlUpdate: (String) -> Unit,
     onResetUrl: () -> Unit,
+    onShowUpdateDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
@@ -791,6 +819,23 @@ fun UrlConfigHeader(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Reset to Default",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onShowUpdateDialog() }
+                        .padding(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Check for Updates",
+                        tint = MaterialTheme.colorScheme.onSecondary,
                         modifier = Modifier.size(20.dp)
                     )
                 }

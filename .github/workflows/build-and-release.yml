@@ -65,10 +65,6 @@ jobs:
      if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'debug') || github.event_name == 'push'
      run: ./gradlew assembleDebug
 
-   - name: Build release APK
-     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'release')
-     run: ./gradlew assembleRelease
-
    - name: Auto-increment version
      if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
      run: |
@@ -94,9 +90,25 @@ jobs:
       sed -i "s/versionCode = $CURRENT_VERSION_CODE/versionCode = $NEW_VERSION_CODE/" app/build.gradle.kts
       sed -i "s/versionName = \"$CURRENT_VERSION_NAME\"/versionName = \"$NEW_VERSION_NAME\"/" app/build.gradle.kts
 
+      echo "Version updated in build.gradle.kts for build process"
+
+   - name: Build debug APK
+     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'debug') || github.event_name == 'push'
+     run: ./gradlew assembleDebug
+
+   - name: Build release APK
+     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'release')
+     run: ./gradlew assembleRelease
+
+   - name: Commit version update
+     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+     run: |
       # Commit the version update back to the repository
       git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
       git config --local user.name "github-actions[bot]"
+
+      # Get the updated version for commit message
+      NEW_VERSION_NAME=$(grep -E "versionName\s*=" app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/')
 
       # Check if there are changes to commit
       if git diff --quiet app/build.gradle.kts; then

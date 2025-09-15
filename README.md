@@ -7,10 +7,10 @@ A modern Android TV app for streaming live sports with a focus on football match
 ## 📱 Screenshots
 
 ### Mobile Interface
-<img src="docs/Screenshot_20250915_175717_LiveTV.jpg" alt="Mobile Interface" width="300">
+<img src="docs/Screenshot_20250915_175717_LiveTV.jpg" alt="Mobile Interface" width="280" />
 
 ### Android TV Interface  
-<img src="docs/Screenshot_20250915_180337.png" alt="Android TV Interface" width="600">
+<img src="docs/Screenshot_20250915_180337.png" alt="Android TV Interface" width="560" />
 
 ## 📱 Download & Install
 

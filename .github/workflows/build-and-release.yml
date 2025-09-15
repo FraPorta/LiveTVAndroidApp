@@ -61,10 +61,6 @@ jobs:
    - name: Clean project
      run: ./gradlew clean
 
-   - name: Build debug APK
-     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_type == 'debug') || github.event_name == 'push'
-     run: ./gradlew assembleDebug
-
    - name: Auto-increment version
      if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
      run: |

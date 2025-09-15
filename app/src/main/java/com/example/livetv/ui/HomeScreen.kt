@@ -97,7 +97,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                 }
             }
             else -> {
-                // Main content with responsive header and match grid
+                // Main content with responsive header and matches grid
                 val configuration = LocalConfiguration.current
                 val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
                 

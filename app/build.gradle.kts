@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -21,14 +23,44 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            // Load keystore config from keystore.properties (local) or gradle.properties (CI)
+            val keystorePropsFile = rootProject.file("keystore.properties")
+            if (keystorePropsFile.exists()) {
+                println("Loading keystore config from keystore.properties")
+                val keystoreProps = Properties()
+                keystoreProps.load(keystorePropsFile.inputStream())
+                storeFile = rootProject.file(keystoreProps.getProperty("RELEASE_STORE_FILE"))
+                storePassword = keystoreProps.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = keystoreProps.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = keystoreProps.getProperty("RELEASE_KEY_PASSWORD")
+                println("Keystore file: ${storeFile?.absolutePath}")
+                println("Using release keystore for signing")
+            } else {
+                println("keystore.properties not found, falling back to gradle.properties")
+                // Fallback to gradle.properties (used in CI)
+                storeFile = rootProject.file(findProperty("RELEASE_STORE_FILE") ?: "app/keystore/release.keystore.jks")
+                storePassword = findProperty("RELEASE_STORE_PASSWORD") as String?
+                keyAlias = findProperty("RELEASE_KEY_ALIAS") as String?
+                keyPassword = findProperty("RELEASE_KEY_PASSWORD") as String?
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
         }
         release {
-            // Use debug signing for now (for development/testing)
-            // In production, you would use a proper release keystore
-            signingConfig = signingConfigs.getByName("debug")
+            // Use proper release keystore if available, fallback to debug for development
+            val keystorePropsFile = rootProject.file("keystore.properties")
+            signingConfig = if (keystorePropsFile.exists() || hasProperty("RELEASE_STORE_PASSWORD")) {
+                signingConfigs.getByName("release")
+            } else {
+                println("Warning: Using debug keystore for release build. Set RELEASE_STORE_PASSWORD to use release keystore.")
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

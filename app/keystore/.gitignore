@@ -1,0 +1,3 @@
+# Keep keystore files private
+*.keystore
+*.jks

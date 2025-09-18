@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -19,11 +20,24 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester 
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -42,6 +56,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val visibleMatches by viewModel.visibleMatches
     val isLoading by viewModel.isLoadingInitialList
     val errorMessage by viewModel.errorMessage
+    val isRefreshing by viewModel.isRefreshing
     
     // Update functionality
     val context = LocalContext.current
@@ -54,54 +69,42 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     )
     var showUpdateDialog by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        when {
-            isLoading -> {
-                // Initial loading screen
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Fetching match list...")
-                }
-            }
-            errorMessage != null -> {
-                // Error screen
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(text = "Error: $errorMessage")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.loadInitialMatchList() }) {
-                        Text(text = "Retry")
+    // Always show headers and main layout, only content area changes based on state
+    val configuration = LocalConfiguration.current
+    val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
+    val focusRequester = remember { FocusRequester() }
+    
+    // Pull-to-refresh state
+    val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
+    
+    // Request focus for TV key handling
+    LaunchedEffect(isCompactScreen) {
+        if (!isCompactScreen) {
+            focusRequester.requestFocus()
+        }
+    }
+    
+    // Handle TV remote key presses
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    when (keyEvent.key) {
+                        Key.R -> {
+                            // R key to refresh (TV remote)
+                            viewModel.refreshCurrentSection()
+                            true
+                        }
+                        else -> false
                     }
+                } else {
+                    false
                 }
             }
-            visibleMatches.isEmpty() -> {
-                 // Empty state after a successful load
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(text = "No matches found.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.loadInitialMatchList() }) {
-                        Text(text = "Refresh")
-                    }
-                }
-            }
-            else -> {
-                // Main content with responsive header and matches grid
-                val configuration = LocalConfiguration.current
-                val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
-                
-                Column(modifier = Modifier.fillMaxSize()) {
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
                     if (isCompactScreen) {
                         // Smartphone layout - separate rows
                         Column(
@@ -110,14 +113,31 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 .padding(horizontal = 24.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // URL configuration header
-                            UrlConfigHeader(
-                                currentUrl = viewModel.getBaseUrl(),
-                                onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
-                                onResetUrl = { viewModel.resetBaseUrl() },
-                                onShowUpdateDialog = { showUpdateDialog = true },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            // URL configuration and action buttons row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // URL configuration header
+                                UrlConfigHeader(
+                                    currentUrl = viewModel.getBaseUrl(),
+                                    onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
+                                    onResetUrl = { viewModel.resetBaseUrl() },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                
+                                // Action buttons (search and update) - compact version
+                                ActionButtons(
+                                    onSearchClick = { viewModel.activateSearch() },
+                                    onShowUpdateDialog = { showUpdateDialog = true },
+                                    onRefreshClick = { viewModel.refreshCurrentSection() },
+                                    isBackgroundScraping = viewModel.isBackgroundScraping.value,
+                                    isRefreshing = isRefreshing,
+                                    isCompact = true,
+                                    showRefreshButton = false // Mobile uses pull-to-refresh
+                                )
+                            }
                             
                             // Section selector
                             SectionSelector(
@@ -141,7 +161,6 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 currentUrl = viewModel.getBaseUrl(),
                                 onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
                                 onResetUrl = { viewModel.resetBaseUrl() },
-                                onShowUpdateDialog = { showUpdateDialog = true },
                                 modifier = Modifier.weight(2f)
                             )
                             
@@ -152,49 +171,116 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 modifier = Modifier.weight(1f),
                                 isCompact = true
                             )
+                            
+                            // Action buttons (search, refresh, and update)
+                            ActionButtons(
+                                onSearchClick = { viewModel.activateSearch() },
+                                onShowUpdateDialog = { showUpdateDialog = true },
+                                onRefreshClick = { viewModel.refreshCurrentSection() },
+                                isBackgroundScraping = viewModel.isBackgroundScraping.value,
+                                isRefreshing = isRefreshing,
+                                isCompact = true,
+                                showRefreshButton = true // TV/tablet shows refresh button
+                            )
                         }
                     }
                     
-                    // Match grid - optimized for TV viewing
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 400.dp), // Adaptive columns based on screen size
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
-                        horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
+                    // Search functionality - only show when active
+                    if (viewModel.isSearchActive.value) {
+                        SearchBar(viewModel = viewModel)
+                    }
+                    
+                    // Content area - changes based on state with pull-to-refresh
+                    SwipeRefresh(
+                        state = swipeRefreshState,
+                        onRefresh = { viewModel.refreshCurrentSection() }
                     ) {
-                        itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
-                            MatchItem(match = match, viewModel = viewModel)
-                        }
+                        when {
+                            isLoading -> {
+                                // Loading state - only covers content area
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(text = "Fetching match list...")
+                                }
+                            }
+                            errorMessage != null -> {
+                                // Error screen - only covers content area
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(text = "Error: $errorMessage")
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = { viewModel.loadInitialMatchList() }) {
+                                        Text(text = "Retry")
+                                    }
+                                }
+                            }
+                            visibleMatches.isEmpty() -> {
+                                // Empty state - only covers content area
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(text = "No matches found.")
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = { viewModel.loadInitialMatchList() }) {
+                                        Text(text = "Refresh")
+                                    }
+                                }
+                            }
+                            else -> {
+                                // Match grid - optimized for TV viewing
+                                LazyVerticalGrid(
+                                    columns = GridCells.Adaptive(minSize = 400.dp), // Adaptive columns based on screen size
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
+                                ) {
+                                    itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
+                                        MatchItem(match = match, viewModel = viewModel)
+                                    }
 
-                        item {
-                        // Modern "Load More" button
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
-                                    .clickable { viewModel.loadMoreMatches() }
-                                    .padding(horizontal = 32.dp, vertical = 12.dp)
-                            ) {
-                                Text(
-                                    "Load More Matches",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
+                                    // Only show "Load More" button when search is not active
+                                    if (!viewModel.isSearchActive.value) {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            // Modern "Load More" button - spans all columns and centered
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 16.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(
+                                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                                            shape = RoundedCornerShape(16.dp)
+                                                        )
+                                                        .clickable { viewModel.loadMoreMatches() }
+                                                        .padding(horizontal = 32.dp, vertical = 12.dp)
+                                                ) {
+                                                    Text(
+                                                        "Load More Matches",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                }
-                }
-            }
         }
     }
     
@@ -609,13 +695,6 @@ fun SectionSelector(
     if (isCompact) {
         // Modern compact version for horizontal layout
         Column(modifier = modifier) {
-            Text(
-                text = "Section",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp)
-            )
-            
             // Modern segmented button style
             Row(
                 modifier = Modifier
@@ -657,13 +736,6 @@ fun SectionSelector(
     } else {
         // Modern full version for vertical layout
         Column(modifier = modifier.fillMaxWidth()) {
-            Text(
-                text = "Select Section",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
             // Modern button group style
             Row(
                 modifier = Modifier
@@ -747,7 +819,6 @@ fun UrlConfigHeader(
     currentUrl: String,
     onUrlUpdate: (String) -> Unit,
     onResetUrl: () -> Unit,
-    onShowUpdateDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
@@ -809,32 +880,15 @@ fun UrlConfigHeader(
                 Box(
                     modifier = Modifier
                         .background(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
                             shape = RoundedCornerShape(12.dp)
                         )
                         .clickable { onResetUrl() }
                         .padding(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Settings,
+                        imageVector = Icons.Default.Check,
                         contentDescription = "Reset to Default",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clickable { onShowUpdateDialog() }
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Check for Updates",
                         tint = MaterialTheme.colorScheme.onSecondary,
                         modifier = Modifier.size(20.dp)
                     )
@@ -891,5 +945,157 @@ fun UrlConfigHeader(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun ActionButtons(
+    onSearchClick: () -> Unit,
+    onShowUpdateDialog: () -> Unit,
+    onRefreshClick: () -> Unit = {},
+    isBackgroundScraping: Boolean = false,
+    isRefreshing: Boolean = false,
+    isCompact: Boolean = false,
+    showRefreshButton: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(12.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Search button
+            Box(
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.tertiary,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .clickable { onSearchClick() }
+                    .padding(8.dp)
+            ) {
+                if (isBackgroundScraping) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onTertiary
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search matches",
+                        tint = MaterialTheme.colorScheme.onTertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            // Refresh button (for TV/tablet)
+            if (showRefreshButton) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onRefreshClick() }
+                        .padding(8.dp)
+                ) {
+                    if (isRefreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh matches",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            
+            // Update button
+            Box(
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .clickable { onShowUpdateDialog() }
+                    .padding(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Check for Updates",
+                    tint = MaterialTheme.colorScheme.onSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchBar(
+    viewModel: MatchViewModel,
+    modifier: Modifier = Modifier
+) {
+    val searchQuery by viewModel.searchQuery
+    
+    // Active search bar - only shown when search is active
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .background(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+        
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { viewModel.updateSearchQuery(it) },
+            placeholder = { Text("Search teams, players, leagues...") },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = Color.Transparent,
+                focusedBorderColor = Color.Transparent
+            )
+        )
+        
+        IconButton(onClick = { viewModel.deactivateSearch() }) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close search",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }

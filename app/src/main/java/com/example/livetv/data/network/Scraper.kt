@@ -25,7 +25,7 @@ import com.example.livetv.data.preferences.UrlPreferences
 enum class ScrapingSection(val displayName: String, val selector: String) {
     FOOTBALL("Football", ":not(#upcoming)"),
     ALL("All Matches", ""),
-    TOP_EVENTS_LIVE("Top Events LIVE", "#upcoming")
+    TOP_EVENTS_LIVE("Top Events", "#upcoming")
 }
 
 class Scraper(private val context: Context) {
@@ -288,6 +288,163 @@ class Scraper(private val context: Context) {
             paginatedMatches
         } catch (e: Exception) {
             Log.e("Scraper", "Error scraping match list", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Scrapes ALL available matches from the selected section without fetching stream links.
+     * This is designed for background scraping to enable search functionality.
+     * @param section The section to scrape from
+     */
+    suspend fun scrapeAllMatches(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
+        val url = urlPreferences.getBaseUrl()
+        Log.d("Scraper", "Background scraping ALL matches from: $url (section: ${section.displayName})")
+        
+        try {
+            // Use the same logic as scrapeMatchList but without pagination limits
+            val html = fetchHtmlWithOkHttp(url)
+            val doc = Jsoup.parse(html)
+            val matches = mutableListOf<Match>()
+            
+            // Filter document by section if specified
+            val sectionDoc = when (section) {
+                ScrapingSection.ALL -> doc
+                ScrapingSection.TOP_EVENTS_LIVE -> {
+                    val upcomingSection = doc.select("#upcoming").first()
+                    if (upcomingSection != null) {
+                        Log.d("Scraper", "Found 'upcoming' section for background scraping")
+                        upcomingSection
+                    } else {
+                        Log.d("Scraper", "No 'upcoming' section found for background scraping, using full document")
+                        doc
+                    }
+                }
+                ScrapingSection.FOOTBALL -> {
+                    val allExceptUpcoming = doc.clone()
+                    allExceptUpcoming.select("#upcoming").remove()
+                    Log.d("Scraper", "Background scraping football section (excluding #upcoming)")
+                    allExceptUpcoming
+                }
+            }
+
+            // Find all match links (same logic as scrapeMatchList)
+            var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
+            if (detailLinks.isEmpty()) {
+                detailLinks = sectionDoc.select("a[href*='/event/']")
+            }
+            if (detailLinks.isEmpty()) {
+                detailLinks = sectionDoc.select("a[href*='event']")
+            }
+            
+            Log.d("Scraper", "Background scraping found ${detailLinks.size} match links")
+
+            // Process all links without pagination
+            for (link in detailLinks) {
+                val href = link.attr("href")
+                if (href.isBlank()) continue
+                
+                val detailPageUrl = if (href.startsWith("http")) {
+                    href
+                } else if (href.startsWith("/")) {
+                    "https://livetv.sx$href"
+                } else {
+                    "https://livetv.sx/$href"
+                }
+                
+                // Extract match information (same logic as scrapeMatchList but simplified for performance)
+                var row = link.closest("tr")
+                if (row == null) row = link.parent()
+                if (row == null) row = link
+                
+                var time = ""
+                var teams = ""
+                var competition = ""
+                
+                if (row != null) {
+                    time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
+                    teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
+                    competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
+                    
+                    // Use link text as fallback for teams
+                    if (teams.isBlank() || teams.length < 5) {
+                        teams = row.select("a").first()?.text()?.trim() ?: ""
+                    }
+                    
+                    // Swap teams and competition if needed (same logic as main scraper)
+                    if (teams.isNotBlank() && competition.isNotBlank()) {
+                        val teamsLooksLikeLeague = teams.length < 10 || 
+                                                 teams.contains(Regex("""\([^)]+\)""")) ||
+                                                 teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||
+                                                 teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
+                        
+                        val competitionLooksLikeTeams = competition.length > 15 ||
+                                                       competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||
+                                                       competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2
+                        
+                        if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
+                            val temp = teams
+                            teams = competition
+                            competition = temp
+                        }
+                    }
+                    
+                    // Extract time from text if needed
+                    if (time.isBlank()) {
+                        val combinedText = "$teams $competition"
+                        val timePattern = Regex("""\b(\d{1,2}:\d{2})\b""")
+                        val timeMatch = timePattern.find(combinedText)
+                        if (timeMatch != null) {
+                            time = timeMatch.value
+                        }
+                    }
+                }
+                
+                // Use link text as final fallback
+                if (teams.isBlank()) {
+                    teams = link.text().trim()
+                }
+                
+                // Clean and extract sport/league info
+                teams = cleanTeamNames(teams, time, competition)
+                val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
+                
+                // Add match if valid (basic validation)
+                if (teams.isNotBlank() && teams.length > 3) {
+                    matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
+                }
+            }
+            
+            // Remove duplicates and apply section filtering
+            val uniqueMatches = matches.distinctBy { it.detailPageUrl }
+            
+            val filteredMatches = when (section) {
+                ScrapingSection.FOOTBALL -> {
+                    uniqueMatches.filter { match ->
+                        val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
+                        combinedText.contains("football") || 
+                        combinedText.contains("soccer") ||
+                        combinedText.contains("premier") || 
+                        combinedText.contains("liga") ||
+                        combinedText.contains("bundesliga") || 
+                        combinedText.contains("serie a") ||
+                        combinedText.contains("ligue") ||
+                        combinedText.contains("champions league") ||
+                        combinedText.contains("europa league") ||
+                        combinedText.contains("uefa") ||
+                        combinedText.contains("fifa") ||
+                        combinedText.contains("world cup") ||
+                        match.sport.lowercase() == "football"
+                    }
+                }
+                else -> uniqueMatches
+            }
+            
+            Log.d("Scraper", "Background scraping completed: ${filteredMatches.size} matches found (${matches.size} total, ${uniqueMatches.size} unique)")
+            filteredMatches
+            
+        } catch (e: Exception) {
+            Log.e("Scraper", "Error in background scraping", e)
             emptyList()
         }
     }

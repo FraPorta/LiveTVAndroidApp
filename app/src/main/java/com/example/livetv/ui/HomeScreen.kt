@@ -54,54 +54,12 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     )
     var showUpdateDialog by remember { mutableStateOf(false) }
 
+    // Always show headers and main layout, only content area changes based on state
+    val configuration = LocalConfiguration.current
+    val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
+    
     Box(modifier = Modifier.fillMaxSize()) {
-        when {
-            isLoading -> {
-                // Initial loading screen
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Fetching match list...")
-                }
-            }
-            errorMessage != null -> {
-                // Error screen
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(text = "Error: $errorMessage")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.loadInitialMatchList() }) {
-                        Text(text = "Retry")
-                    }
-                }
-            }
-            visibleMatches.isEmpty() -> {
-                 // Empty state after a successful load
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(text = "No matches found.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.loadInitialMatchList() }) {
-                        Text(text = "Refresh")
-                    }
-                }
-            }
-            else -> {
-                // Main content with responsive header and matches grid
-                val configuration = LocalConfiguration.current
-                val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
-                
-                Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
                     if (isCompactScreen) {
                         // Smartphone layout - separate rows
                         Column(
@@ -155,46 +113,91 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         }
                     }
                     
-                    // Match grid - optimized for TV viewing
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 400.dp), // Adaptive columns based on screen size
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
-                        horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
-                    ) {
-                        itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
-                            MatchItem(match = match, viewModel = viewModel)
-                        }
+                    // Content area - changes based on state
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when {
+                            isLoading -> {
+                                // Loading state - only covers content area
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(text = "Fetching match list...")
+                                }
+                            }
+                            errorMessage != null -> {
+                                // Error screen - only covers content area
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(text = "Error: $errorMessage")
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = { viewModel.loadInitialMatchList() }) {
+                                        Text(text = "Retry")
+                                    }
+                                }
+                            }
+                            visibleMatches.isEmpty() -> {
+                                // Empty state - only covers content area
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(text = "No matches found.")
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = { viewModel.loadInitialMatchList() }) {
+                                        Text(text = "Refresh")
+                                    }
+                                }
+                            }
+                            else -> {
+                                // Match grid - optimized for TV viewing
+                                LazyVerticalGrid(
+                                    columns = GridCells.Adaptive(minSize = 400.dp), // Adaptive columns based on screen size
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
+                                ) {
+                                    itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
+                                        MatchItem(match = match, viewModel = viewModel)
+                                    }
 
-                        item {
-                        // Modern "Load More" button
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
-                                    .clickable { viewModel.loadMoreMatches() }
-                                    .padding(horizontal = 32.dp, vertical = 12.dp)
-                            ) {
-                                Text(
-                                    "Load More Matches",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
+                                    item {
+                                        // Modern "Load More" button
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 16.dp),
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(
+                                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                                        shape = RoundedCornerShape(16.dp)
+                                                    )
+                                                    .clickable { viewModel.loadMoreMatches() }
+                                                    .padding(horizontal = 32.dp, vertical = 12.dp)
+                                            ) {
+                                                Text(
+                                                    "Load More Matches",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                }
-                }
-            }
         }
     }
     

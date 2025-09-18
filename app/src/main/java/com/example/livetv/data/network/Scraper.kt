@@ -25,7 +25,7 @@ import com.example.livetv.data.preferences.UrlPreferences
 enum class ScrapingSection(val displayName: String, val selector: String) {
     FOOTBALL("Football", ":not(#upcoming)"),
     ALL("All Matches", ""),
-    TOP_EVENTS_LIVE("Top Events LIVE", "#upcoming")
+    TOP_EVENTS_LIVE("Top Events", "#upcoming")
 }
 
 class Scraper(private val context: Context) {

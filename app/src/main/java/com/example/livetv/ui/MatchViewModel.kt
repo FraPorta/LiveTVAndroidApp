@@ -233,14 +233,22 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     private fun fetchLinksForBatchIfNeeded(batch: List<Match>) {
         // Only fetch links for matches that don't already have them
         val matchesNeedingLinks = batch.filter { match ->
-            match.streamLinks.isEmpty() && !match.areLinksLoading
+            // Check if links are empty AND not currently loading AND not already found in allMatches
+            val hasNoLinks = match.streamLinks.isEmpty()
+            val notCurrentlyLoading = !match.areLinksLoading
+            
+            // Also check if this match in allMatches already has links
+            val matchInAllMatches = allMatches.find { it.detailPageUrl == match.detailPageUrl }
+            val alreadyHasLinksInAllMatches = matchInAllMatches?.streamLinks?.isNotEmpty() == true
+            
+            hasNoLinks && notCurrentlyLoading && !alreadyHasLinksInAllMatches
         }
         
         if (matchesNeedingLinks.isNotEmpty()) {
             fetchLinksForBatch(matchesNeedingLinks)
         }
         
-        Log.d("ViewModel", "Links needed for ${matchesNeedingLinks.size} out of ${batch.size} matches")
+        Log.d("ViewModel", "Links needed for ${matchesNeedingLinks.size} out of ${batch.size} matches (after checking allMatches cache)")
     }
     
     private fun fetchLinksForBatch(batch: List<Match>) {
@@ -578,22 +586,30 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
             // When searching, show all matching results immediately
             currentVisibleCount = searchedMatches.size
-            visibleMatches.value = searchedMatches
+            // Ensure we use the most up-to-date match data with links
+            val matchesWithLatestData = searchedMatches.map { match ->
+                allMatches.find { it.detailPageUrl == match.detailPageUrl } ?: match
+            }
+            visibleMatches.value = matchesWithLatestData
             
             // Fetch links only for matches that don't already have them loaded
-            if (searchedMatches.isNotEmpty()) {
-                fetchLinksForBatchIfNeeded(searchedMatches)
+            if (matchesWithLatestData.isNotEmpty()) {
+                fetchLinksForBatchIfNeeded(matchesWithLatestData)
             }
         } else {
             // When not searching, use pagination logic
             val maxToShow = currentVisibleCount.coerceAtLeast(INITIAL_LOAD_SIZE)
             val toShow = searchedMatches.take(maxToShow)
             currentVisibleCount = toShow.size
-            visibleMatches.value = toShow
+            // Ensure we use the most up-to-date match data with links
+            val toShowWithLatestData = toShow.map { match ->
+                allMatches.find { it.detailPageUrl == match.detailPageUrl } ?: match
+            }
+            visibleMatches.value = toShowWithLatestData
             
             // Fetch links only for matches that don't already have them loaded
-            if (toShow.isNotEmpty()) {
-                fetchLinksForBatchIfNeeded(toShow)
+            if (toShowWithLatestData.isNotEmpty()) {
+                fetchLinksForBatchIfNeeded(toShowWithLatestData)
             }
         }
         

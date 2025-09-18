@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -68,14 +70,28 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 .padding(horizontal = 24.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // URL configuration header
-                            UrlConfigHeader(
-                                currentUrl = viewModel.getBaseUrl(),
-                                onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
-                                onResetUrl = { viewModel.resetBaseUrl() },
-                                onShowUpdateDialog = { showUpdateDialog = true },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            // URL configuration and action buttons row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // URL configuration header
+                                UrlConfigHeader(
+                                    currentUrl = viewModel.getBaseUrl(),
+                                    onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
+                                    onResetUrl = { viewModel.resetBaseUrl() },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                
+                                // Action buttons (search and update) - compact version
+                                ActionButtons(
+                                    onSearchClick = { viewModel.activateSearch() },
+                                    onShowUpdateDialog = { showUpdateDialog = true },
+                                    isBackgroundScraping = viewModel.isBackgroundScraping.value,
+                                    isCompact = true
+                                )
+                            }
                             
                             // Section selector
                             SectionSelector(
@@ -99,7 +115,6 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 currentUrl = viewModel.getBaseUrl(),
                                 onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
                                 onResetUrl = { viewModel.resetBaseUrl() },
-                                onShowUpdateDialog = { showUpdateDialog = true },
                                 modifier = Modifier.weight(2f)
                             )
                             
@@ -110,7 +125,20 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 modifier = Modifier.weight(1f),
                                 isCompact = true
                             )
+                            
+                            // Action buttons (search and update)
+                            ActionButtons(
+                                onSearchClick = { viewModel.activateSearch() },
+                                onShowUpdateDialog = { showUpdateDialog = true },
+                                isBackgroundScraping = viewModel.isBackgroundScraping.value,
+                                isCompact = true
+                            )
                         }
+                    }
+                    
+                    // Search functionality - only show when active
+                    if (viewModel.isSearchActive.value) {
+                        SearchBar(viewModel = viewModel)
                     }
                     
                     // Content area - changes based on state
@@ -169,28 +197,31 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                         MatchItem(match = match, viewModel = viewModel)
                                     }
 
-                                    item {
-                                        // Modern "Load More" button
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 16.dp),
-                                            horizontalArrangement = Arrangement.Center
-                                        ) {
-                                            Box(
+                                    // Only show "Load More" button when search is not active
+                                    if (!viewModel.isSearchActive.value) {
+                                        item {
+                                            // Modern "Load More" button
+                                            Row(
                                                 modifier = Modifier
-                                                    .background(
-                                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                                        shape = RoundedCornerShape(16.dp)
-                                                    )
-                                                    .clickable { viewModel.loadMoreMatches() }
-                                                    .padding(horizontal = 32.dp, vertical = 12.dp)
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 16.dp),
+                                                horizontalArrangement = Arrangement.Center
                                             ) {
-                                                Text(
-                                                    "Load More Matches",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                                )
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(
+                                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                                            shape = RoundedCornerShape(16.dp)
+                                                        )
+                                                        .clickable { viewModel.loadMoreMatches() }
+                                                        .padding(horizontal = 32.dp, vertical = 12.dp)
+                                                ) {
+                                                    Text(
+                                                        "Load More Matches",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -612,13 +643,6 @@ fun SectionSelector(
     if (isCompact) {
         // Modern compact version for horizontal layout
         Column(modifier = modifier) {
-            Text(
-                text = "Section",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp)
-            )
-            
             // Modern segmented button style
             Row(
                 modifier = Modifier
@@ -660,13 +684,6 @@ fun SectionSelector(
     } else {
         // Modern full version for vertical layout
         Column(modifier = modifier.fillMaxWidth()) {
-            Text(
-                text = "Select Section",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
             // Modern button group style
             Row(
                 modifier = Modifier
@@ -750,7 +767,6 @@ fun UrlConfigHeader(
     currentUrl: String,
     onUrlUpdate: (String) -> Unit,
     onResetUrl: () -> Unit,
-    onShowUpdateDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
@@ -825,23 +841,6 @@ fun UrlConfigHeader(
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clickable { onShowUpdateDialog() }
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Check for Updates",
-                        tint = MaterialTheme.colorScheme.onSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
             }
         }
     }
@@ -894,5 +893,116 @@ fun UrlConfigHeader(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun ActionButtons(
+    onSearchClick: () -> Unit,
+    onShowUpdateDialog: () -> Unit,
+    isBackgroundScraping: Boolean = false,
+    isCompact: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Search button
+        Box(
+            modifier = Modifier
+                .background(
+                    color = MaterialTheme.colorScheme.tertiary,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .clickable { onSearchClick() }
+                .padding(8.dp)
+        ) {
+            if (isBackgroundScraping) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onTertiary
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Search matches",
+                    tint = MaterialTheme.colorScheme.onTertiary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        // Update button
+        Box(
+            modifier = Modifier
+                .background(
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .clickable { onShowUpdateDialog() }
+                .padding(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = "Check for Updates",
+                tint = MaterialTheme.colorScheme.onSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchBar(
+    viewModel: MatchViewModel,
+    modifier: Modifier = Modifier
+) {
+    val searchQuery by viewModel.searchQuery
+    
+    // Active search bar - only shown when search is active
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .background(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+        
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { viewModel.updateSearchQuery(it) },
+            placeholder = { Text("Search teams, players, leagues...") },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = Color.Transparent,
+                focusedBorderColor = Color.Transparent
+            )
+        )
+        
+        IconButton(onClick = { viewModel.deactivateSearch() }) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close search",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }

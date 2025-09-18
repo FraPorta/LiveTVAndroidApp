@@ -38,6 +38,11 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     val selectedLeague = mutableStateOf<String?>(null)
     val selectedSection = mutableStateOf<ScrapingSection>(ScrapingSection.FOOTBALL)
 
+    // Search functionality
+    val searchQuery = mutableStateOf("")
+    val isSearchActive = mutableStateOf(false)
+    val isBackgroundScraping = mutableStateOf(false)
+
     // The number of matches currently shown (after filtering)
     private var currentVisibleCount = 0
 
@@ -79,6 +84,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 currentVisibleCount = 0
                 visibleMatches.value = emptyList()
                 loadMoreMatches() // Load the first batch for display
+                
+                // Start background scraping for all matches to enable search
+                startBackgroundScraping()
             } catch (e: Exception) {
                 Log.e("ViewModel", "Error loading initial match list", e)
                 errorMessage.value = e.message ?: "Failed to load match list"
@@ -183,7 +191,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
 
     private fun getFilteredMatches(): List<Match> {
-        return allMatches.filter { match ->
+        var filtered = allMatches.filter { match ->
             val sportMatches = selectedSport.value == null || 
                               selectedSport.value == "All Sports" || 
                               match.sport == selectedSport.value
@@ -194,6 +202,17 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             
             sportMatches && leagueMatches
         }
+        
+        // Apply search filter if active
+        if (isSearchActive.value && searchQuery.value.isNotBlank()) {
+            val searchText = searchQuery.value.lowercase().trim()
+            filtered = filtered.filter { match ->
+                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
+                matchText.contains(searchText)
+            }
+        }
+        
+        return filtered
     }
 
     fun setSportFilter(sport: String?) {
@@ -212,9 +231,8 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             // When filters are applied, we need to ensure we have all matches
             ensureAllMatchesLoaded()
             
-            currentVisibleCount = 0
-            visibleMatches.value = emptyList()
-            loadMoreMatches()
+            currentVisibleCount = INITIAL_LOAD_SIZE
+            refreshVisibleMatches()
         }
     }
 
@@ -305,4 +323,105 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         // Reload the match list with the default URL
         loadInitialMatchList()
     }
+    
+    /**
+     * Starts background scraping to load all available matches for search functionality
+     */
+    private fun startBackgroundScraping() {
+        viewModelScope.launch {
+            try {
+                isBackgroundScraping.value = true
+                Log.d("ViewModel", "Starting background scraping for all matches...")
+                
+                val allBackgroundMatches = repository.getAllMatches(selectedSection.value)
+                Log.d("ViewModel", "Background scraping completed: ${allBackgroundMatches.size} matches")
+                
+                // Replace our current list with the full list
+                allMatches = allBackgroundMatches
+                hasLoadedAllMatches = true
+                totalFetchedMatches = allBackgroundMatches.size
+                
+                // Update filter options with the complete list
+                updateFilterOptionsFromCurrentMatches()
+                
+                Log.d("ViewModel", "Background scraping updated match list: ${allMatches.size} total matches available for search")
+                
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Error in background scraping", e)
+            } finally {
+                isBackgroundScraping.value = false
+            }
+        }
+    }
+    
+    /**
+     * Activates search mode
+     */
+    fun activateSearch() {
+        isSearchActive.value = true
+        Log.d("ViewModel", "Search activated")
+    }
+    
+    /**
+     * Deactivates search mode and clears the search query
+     */
+    fun deactivateSearch() {
+        isSearchActive.value = false
+        searchQuery.value = ""
+        refreshVisibleMatches()
+        Log.d("ViewModel", "Search deactivated")
+    }
+    
+    /**
+     * Updates the search query and filters matches
+     */
+    fun updateSearchQuery(query: String) {
+        searchQuery.value = query
+        refreshVisibleMatches()
+        Log.d("ViewModel", "Search query updated: '$query'")
+    }
+    
+    /**
+     * Refreshes the visible matches based on current filters and search query
+     */
+    private fun refreshVisibleMatches() {
+        val filteredMatches = getFilteredMatches()
+        
+        // If search is active and query is not empty, filter by search query
+        val searchedMatches = if (isSearchActive.value && searchQuery.value.isNotBlank()) {
+            filteredMatches.filter { match ->
+                val searchText = searchQuery.value.lowercase().trim()
+                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
+                matchText.contains(searchText)
+            }
+        } else {
+            filteredMatches
+        }
+        
+        // Update visible matches - show all matching results when searching
+        if (isSearchActive.value && searchQuery.value.isNotBlank()) {
+            // When searching, show all matching results immediately
+            currentVisibleCount = searchedMatches.size
+            visibleMatches.value = searchedMatches
+            
+            // Fetch links for all visible search results
+            if (searchedMatches.isNotEmpty()) {
+                fetchLinksForBatch(searchedMatches)
+            }
+        } else {
+            // When not searching, use pagination logic
+            val maxToShow = currentVisibleCount.coerceAtLeast(INITIAL_LOAD_SIZE)
+            val toShow = searchedMatches.take(maxToShow)
+            currentVisibleCount = toShow.size
+            visibleMatches.value = toShow
+            
+            // Fetch links for visible matches
+            if (toShow.isNotEmpty()) {
+                fetchLinksForBatch(toShow)
+            }
+        }
+        
+        Log.d("ViewModel", "Visible matches refreshed: ${visibleMatches.value.size} (from ${searchedMatches.size} filtered)")
+    }
+    
 }

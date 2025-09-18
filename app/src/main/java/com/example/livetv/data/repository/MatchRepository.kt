@@ -27,6 +27,14 @@ class MatchRepository(context: Context) {
     }
     
     /**
+     * Fetches ALL available matches from the selected section for background scraping.
+     * Does not fetch stream links - only match metadata for search functionality.
+     */
+    suspend fun getAllMatches(section: ScrapingSection = ScrapingSection.ALL): List<Match> {
+        return scraper.scrapeAllMatches(section)
+    }
+    
+    /**
      * Gets the current base URL being used for scraping
      */
     fun getBaseUrl(): String {

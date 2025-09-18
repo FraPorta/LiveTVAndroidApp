@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -199,13 +200,13 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
 
                                     // Only show "Load More" button when search is not active
                                     if (!viewModel.isSearchActive.value) {
-                                        item {
-                                            // Modern "Load More" button
-                                            Row(
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            // Modern "Load More" button - spans all columns and centered
+                                            Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .padding(vertical = 16.dp),
-                                                horizontalArrangement = Arrangement.Center
+                                                contentAlignment = Alignment.Center
                                             ) {
                                                 Box(
                                                     modifier = Modifier
@@ -828,16 +829,16 @@ fun UrlConfigHeader(
                 Box(
                     modifier = Modifier
                         .background(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
                             shape = RoundedCornerShape(12.dp)
                         )
                         .clickable { onResetUrl() }
                         .padding(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Settings,
+                        imageVector = Icons.Default.Refresh,
                         contentDescription = "Reset to Default",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        tint = MaterialTheme.colorScheme.onSecondary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -904,55 +905,63 @@ fun ActionButtons(
     isCompact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
+    Box(
+        modifier = modifier
+            .background(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(12.dp)
     ) {
-        // Search button
-        Box(
-            modifier = Modifier
-                .background(
-                    color = MaterialTheme.colorScheme.tertiary,
-                    shape = RoundedCornerShape(12.dp)
-                )
-                .clickable { onSearchClick() }
-                .padding(8.dp)
+        Row(
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isBackgroundScraping) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onTertiary
-                )
-            } else {
+            // Search button
+            Box(
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.tertiary,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .clickable { onSearchClick() }
+                    .padding(8.dp)
+            ) {
+                if (isBackgroundScraping) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onTertiary
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search matches",
+                        tint = MaterialTheme.colorScheme.onTertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            // Update button
+            Box(
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .clickable { onShowUpdateDialog() }
+                    .padding(8.dp)
+            ) {
                 Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search matches",
-                    tint = MaterialTheme.colorScheme.onTertiary,
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Check for Updates",
+                    tint = MaterialTheme.colorScheme.onSecondary,
                     modifier = Modifier.size(20.dp)
                 )
             }
-        }
-        
-        Spacer(modifier = Modifier.width(8.dp))
-        
-        // Update button
-        Box(
-            modifier = Modifier
-                .background(
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                .clickable { onShowUpdateDialog() }
-                .padding(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = "Check for Updates",
-                tint = MaterialTheme.colorScheme.onSecondary,
-                modifier = Modifier.size(20.dp)
-            )
         }
     }
 }

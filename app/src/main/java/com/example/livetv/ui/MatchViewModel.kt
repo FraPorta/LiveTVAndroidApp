@@ -10,7 +10,7 @@ import com.example.livetv.data.repository.MatchRepository
 import com.example.livetv.data.network.ScrapingSection
 import kotlinx.coroutines.launch
 
-const val INITIAL_LOAD_SIZE = 15
+const val INITIAL_LOAD_SIZE = 16
 const val LOAD_MORE_SIZE = 10
 
 class MatchViewModel(application: Application) : AndroidViewModel(application) {

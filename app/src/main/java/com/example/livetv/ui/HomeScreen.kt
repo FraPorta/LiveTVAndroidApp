@@ -23,10 +23,20 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester 
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -45,6 +55,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val visibleMatches by viewModel.visibleMatches
     val isLoading by viewModel.isLoadingInitialList
     val errorMessage by viewModel.errorMessage
+    val isRefreshing by viewModel.isRefreshing
     
     // Update functionality
     val context = LocalContext.current
@@ -60,8 +71,38 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     // Always show headers and main layout, only content area changes based on state
     val configuration = LocalConfiguration.current
     val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
+    val focusRequester = remember { FocusRequester() }
     
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Pull-to-refresh state
+    val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
+    
+    // Request focus for TV key handling
+    LaunchedEffect(isCompactScreen) {
+        if (!isCompactScreen) {
+            focusRequester.requestFocus()
+        }
+    }
+    
+    // Handle TV remote key presses
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    when (keyEvent.key) {
+                        Key.R -> {
+                            // R key to refresh (TV remote)
+                            viewModel.refreshCurrentSection()
+                            true
+                        }
+                        else -> false
+                    }
+                } else {
+                    false
+                }
+            }
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
                     if (isCompactScreen) {
                         // Smartphone layout - separate rows
@@ -89,8 +130,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 ActionButtons(
                                     onSearchClick = { viewModel.activateSearch() },
                                     onShowUpdateDialog = { showUpdateDialog = true },
+                                    onRefreshClick = { viewModel.refreshCurrentSection() },
                                     isBackgroundScraping = viewModel.isBackgroundScraping.value,
-                                    isCompact = true
+                                    isRefreshing = isRefreshing,
+                                    isCompact = true,
+                                    showRefreshButton = false // Mobile uses pull-to-refresh
                                 )
                             }
                             
@@ -127,12 +171,15 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 isCompact = true
                             )
                             
-                            // Action buttons (search and update)
+                            // Action buttons (search, refresh, and update)
                             ActionButtons(
                                 onSearchClick = { viewModel.activateSearch() },
                                 onShowUpdateDialog = { showUpdateDialog = true },
+                                onRefreshClick = { viewModel.refreshCurrentSection() },
                                 isBackgroundScraping = viewModel.isBackgroundScraping.value,
-                                isCompact = true
+                                isRefreshing = isRefreshing,
+                                isCompact = true,
+                                showRefreshButton = true // TV/tablet shows refresh button
                             )
                         }
                     }
@@ -142,8 +189,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         SearchBar(viewModel = viewModel)
                     }
                     
-                    // Content area - changes based on state
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    // Content area - changes based on state with pull-to-refresh
+                    SwipeRefresh(
+                        state = swipeRefreshState,
+                        onRefresh = { viewModel.refreshCurrentSection() }
+                    ) {
                         when {
                             isLoading -> {
                                 // Loading state - only covers content area
@@ -901,8 +951,11 @@ fun UrlConfigHeader(
 fun ActionButtons(
     onSearchClick: () -> Unit,
     onShowUpdateDialog: () -> Unit,
+    onRefreshClick: () -> Unit = {},
     isBackgroundScraping: Boolean = false,
+    isRefreshing: Boolean = false,
     isCompact: Boolean = false,
+    showRefreshButton: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -944,6 +997,36 @@ fun ActionButtons(
             }
             
             Spacer(modifier = Modifier.width(8.dp))
+            
+            // Refresh button (for TV/tablet)
+            if (showRefreshButton) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onRefreshClick() }
+                        .padding(8.dp)
+                ) {
+                    if (isRefreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh matches",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.width(8.dp))
+            }
             
             // Update button
             Box(

@@ -54,4 +54,25 @@ class MatchRepository(context: Context) {
     fun resetBaseUrl() {
         scraper.resetBaseUrl()
     }
+    
+    /**
+     * Gets the current acestream engine IP address
+     */
+    fun getAcestreamIp(): String {
+        return scraper.getAcestreamIp()
+    }
+    
+    /**
+     * Updates the acestream engine IP address
+     */
+    fun updateAcestreamIp(ip: String) {
+        scraper.updateAcestreamIp(ip)
+    }
+    
+    /**
+     * Resets the acestream IP to the default
+     */
+    fun resetAcestreamIp() {
+        scraper.resetAcestreamIp()
+    }
 }

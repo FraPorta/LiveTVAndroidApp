@@ -23,7 +23,10 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Router
 import androidx.compose.material3.*
+import androidx.compose.ui.text.style.TextOverflow
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import androidx.compose.runtime.*
@@ -124,6 +127,10 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     currentUrl = viewModel.getBaseUrl(),
                                     onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
                                     onResetUrl = { viewModel.resetBaseUrl() },
+                                    currentAcestreamIp = viewModel.getAcestreamIp(),
+                                    onAcestreamIpUpdate = { newIp -> viewModel.updateAcestreamIp(newIp) },
+                                    onResetAcestreamIp = { viewModel.resetAcestreamIp() },
+                                    isCompact = true,
                                     modifier = Modifier.weight(1f)
                                 )
                                 
@@ -161,6 +168,10 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 currentUrl = viewModel.getBaseUrl(),
                                 onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
                                 onResetUrl = { viewModel.resetBaseUrl() },
+                                currentAcestreamIp = viewModel.getAcestreamIp(),
+                                onAcestreamIpUpdate = { newIp -> viewModel.updateAcestreamIp(newIp) },
+                                onResetAcestreamIp = { viewModel.resetAcestreamIp() },
+                                isCompact = false,
                                 modifier = Modifier.weight(2f)
                             )
                             
@@ -297,9 +308,14 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
 fun MatchItem(match: Match, viewModel: MatchViewModel) {
     val context = LocalContext.current
     
+    // Helper function to identify acestream links (both original and HTTP proxy formats)
+    fun isAcestreamLink(url: String): Boolean {
+        return url.startsWith("acestream://") || url.contains("/ace/getstream?id=")
+    }
+    
     // Categorize links to determine card height
-    val aceStreamLinks = match.streamLinks.filter { it.startsWith("acestream://") }
-    val webStreamLinks = match.streamLinks.filter { !it.startsWith("acestream://") }
+    val aceStreamLinks = match.streamLinks.filter { isAcestreamLink(it) }
+    val webStreamLinks = match.streamLinks.filter { !isAcestreamLink(it) }
     val hasBothTypes = aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
     
     // State for popup dialogs
@@ -783,6 +799,12 @@ fun SectionSelector(
  */
 private fun openUrlWithChooser(context: Context, url: String) {
     try {
+        // Check if this is an acestream HTTP proxy URL
+        if (url.contains("/ace/getstream?id=")) {
+            openWithVlc(context, url)
+            return
+        }
+        
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
             // Add flags to ensure compatibility
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -813,20 +835,57 @@ private fun openUrlWithChooser(context: Context, url: String) {
     }
 }
 
+private fun openWithVlc(context: Context, url: String) {
+    try {
+        // First try to open directly with VLC
+        val vlcIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse(url), "video/*")
+            setPackage("org.videolan.vlc") // VLC package name
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        
+        context.startActivity(vlcIntent)
+        android.util.Log.d("HomeScreen", "Opened acestream HTTP URL with VLC: $url")
+    } catch (e: Exception) {
+        // VLC not available or other error, fall back to chooser
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse(url), "video/*")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            val chooserIntent = Intent.createChooser(intent, "Open acestream with media player...").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            context.startActivity(chooserIntent)
+            android.util.Log.d("HomeScreen", "Opened acestream HTTP URL with chooser: $url")
+        } catch (e2: Exception) {
+            android.util.Log.e("HomeScreen", "Failed to open acestream URL: $url", e2)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UrlConfigHeader(
     currentUrl: String,
     onUrlUpdate: (String) -> Unit,
     onResetUrl: () -> Unit,
+    currentAcestreamIp: String,
+    onAcestreamIpUpdate: (String) -> Unit,
+    onResetAcestreamIp: () -> Unit,
+    isCompact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
     var editedUrl by remember { mutableStateOf(currentUrl) }
+    var editedAcestreamIp by remember { mutableStateOf(currentAcestreamIp) }
     
-    // Update editedUrl when currentUrl changes
-    LaunchedEffect(currentUrl) {
+    // Update edited values when current values change
+    LaunchedEffect(currentUrl, currentAcestreamIp) {
         editedUrl = currentUrl
+        editedAcestreamIp = currentAcestreamIp
     }
     
     Box(
@@ -844,19 +903,121 @@ fun UrlConfigHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Scraping Source",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
-                Text(
-                    text = currentUrl,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    maxLines = 1,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
+            if (isCompact) {
+                // Mobile layout - more compact vertical arrangement with padding before buttons
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 16.dp) // Add padding between text and buttons
+                ) {
+                    // Compact source display
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = currentUrl,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .padding(start = 6.dp)
+                                .weight(1f)
+                        )
+                    }
+                    
+                    // Compact acestream IP display
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Router,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "Acestream: $currentAcestreamIp",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
+                    }
+                }
+            } else {
+                // Tablet/TV layout - horizontal arrangement with texts close to each other
+                Column(modifier = Modifier.weight(1f)) {
+                    // Both texts in close horizontal arrangement
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        // Scraping Source
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Language,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Scraping Source:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(start = 6.dp)
+                                )
+                            }
+                            Text(
+                                text = currentUrl,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 22.dp)
+                            )
+                        }
+                        
+                        // Acestream IP
+                        Column(modifier = Modifier.weight(0.6f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Router,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Acestream IP:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(start = 6.dp)
+                                )
+                            }
+                            Text(
+                                text = currentAcestreamIp,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(start = 22.dp)
+                            )
+                        }
+                    }
+                }
             }
             
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -903,30 +1064,57 @@ fun UrlConfigHeader(
             onDismissRequest = { 
                 showEditDialog = false 
                 editedUrl = currentUrl // Reset to current URL if cancelled
+                editedAcestreamIp = currentAcestreamIp // Reset to current IP if cancelled
             },
-            title = { Text("Edit Scraping URL") },
+            title = { Text("Configuration") },
             text = {
-                Column {
-                    Text(
-                        "Enter the base URL for scraping match data:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    OutlinedTextField(
-                        value = editedUrl,
-                        onValueChange = { editedUrl = it },
-                        label = { Text("Base URL") },
-                        placeholder = { Text("https://livetv.sx/enx/allupcomingsports/1/") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Base URL section
+                    Column {
+                        Text(
+                            "Base URL for scraping match data:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        OutlinedTextField(
+                            value = editedUrl,
+                            onValueChange = { editedUrl = it },
+                            label = { Text("Base URL") },
+                            placeholder = { Text("https://livetv.sx/enx/allupcomingsports/1/") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    
+                    // Acestream IP section
+                    Column {
+                        Text(
+                            "Acestream engine IP address:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        OutlinedTextField(
+                            value = editedAcestreamIp,
+                            onValueChange = { editedAcestreamIp = it },
+                            label = { Text("Acestream IP") },
+                            placeholder = { Text("127.0.0.1") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
+                        var hasChanges = false
                         if (editedUrl.isNotBlank() && editedUrl != currentUrl) {
                             onUrlUpdate(editedUrl)
+                            hasChanges = true
+                        }
+                        if (editedAcestreamIp.isNotBlank() && editedAcestreamIp != currentAcestreamIp) {
+                            onAcestreamIpUpdate(editedAcestreamIp)
+                            hasChanges = true
                         }
                         showEditDialog = false
                     }
@@ -939,6 +1127,7 @@ fun UrlConfigHeader(
                     onClick = { 
                         showEditDialog = false
                         editedUrl = currentUrl
+                        editedAcestreamIp = currentAcestreamIp
                     }
                 ) {
                     Text("Cancel")

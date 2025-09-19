@@ -24,8 +24,8 @@ import com.example.livetv.data.preferences.UrlPreferences
 
 enum class ScrapingSection(val displayName: String, val selector: String) {
     FOOTBALL("Football", ":not(#upcoming)"),
-    ALL("All Matches", ""),
-    TOP_EVENTS_LIVE("Top Events", "#upcoming")
+    TOP_EVENTS_LIVE("Top Events", "#upcoming"),
+    ALL("All", "")
 }
 
 class Scraper(private val context: Context) {
@@ -711,14 +711,27 @@ class Scraper(private val context: Context) {
 
             val allLinks = links.toList().distinct()
             
+            // Transform acestream links to HTTP proxy format
+            val transformedLinks = allLinks.map { link ->
+                if (link.startsWith("acestream://")) {
+                    val acestreamId = link.removePrefix("acestream://")
+                    val acestreamIp = getAcestreamIp()
+                    val httpProxyUrl = "http://$acestreamIp:6878/ace/getstream?id=$acestreamId"
+                    Log.d("Scraper", "Transformed acestream link: $link -> $httpProxyUrl")
+                    httpProxyUrl
+                } else {
+                    link
+                }
+            }
+            
             // Debug: Log all found URLs before filtering
-            Log.d("Scraper", "Found ${allLinks.size} URLs before filtering:")
-            allLinks.forEach { url ->
+            Log.d("Scraper", "Found ${transformedLinks.size} URLs before filtering:")
+            transformedLinks.forEach { url ->
                 Log.d("Scraper", "URL: $url")
             }
             
             // Filter out invalid or incomplete URLs
-            val finalLinks = allLinks.filter { link ->
+            val finalLinks = transformedLinks.filter { link ->
                 val isValid = isValidStreamUrl(link)
                 if (!isValid) {
                     Log.d("Scraper", "FILTERED OUT invalid URL: $link")
@@ -728,14 +741,15 @@ class Scraper(private val context: Context) {
             
             Log.d("Scraper", "Final valid URLs: ${finalLinks.size}")
             
-            Log.d("Scraper", "Found ${allLinks.size} total links, ${finalLinks.size} valid stream links for $detailPageUrl")
-            if (allLinks.size != finalLinks.size) {
-                val filteredOut = allLinks - finalLinks.toSet()
+            Log.d("Scraper", "Found ${transformedLinks.size} total links, ${finalLinks.size} valid stream links for $detailPageUrl")
+            if (transformedLinks.size != finalLinks.size) {
+                val filteredOut = transformedLinks - finalLinks.toSet()
                 Log.d("Scraper", "Filtered out ${filteredOut.size} invalid links: ${filteredOut.joinToString()}")
             }
             Log.d("Scraper", "Stream types found: ${finalLinks.joinToString(", ") { 
                 when {
                     it.startsWith("acestream://") -> "Acestream"
+                    it.contains("/ace/getstream?id=") -> "Acestream (HTTP Proxy)"
                     it.contains(".m3u8") -> "M3U8/HLS"
                     it.startsWith("rtmp") -> "RTMP"
                     it.contains("youtube.com") || it.contains("youtu.be") -> "YouTube"
@@ -766,7 +780,13 @@ class Scraper(private val context: Context) {
             
             // HTTP/HTTPS links validation
             url.startsWith("http://") || url.startsWith("https://") -> {
-                validateHttpUrl(url)
+                // Special validation for acestream HTTP proxy URLs
+                if (url.contains("/ace/getstream?id=")) {
+                    val idParam = url.substringAfter("/ace/getstream?id=")
+                    idParam.isNotBlank() && idParam.length >= 32 // acestream IDs are typically 40 chars but allow some flexibility
+                } else {
+                    validateHttpUrl(url)
+                }
             }
             
             // RTMP links
@@ -972,5 +992,26 @@ class Scraper(private val context: Context) {
      */
     fun resetBaseUrl() {
         urlPreferences.resetToDefault()
+    }
+    
+    /**
+     * Gets the current acestream engine IP address
+     */
+    fun getAcestreamIp(): String {
+        return urlPreferences.getAcestreamIp()
+    }
+    
+    /**
+     * Updates the acestream engine IP address
+     */
+    fun updateAcestreamIp(ip: String) {
+        urlPreferences.setAcestreamIp(ip)
+    }
+    
+    /**
+     * Resets the acestream IP to the default
+     */
+    fun resetAcestreamIp() {
+        urlPreferences.resetAcestreamIpToDefault()
     }
 }

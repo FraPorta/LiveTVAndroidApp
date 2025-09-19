@@ -446,6 +446,27 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
+     * Gets the current acestream engine IP address
+     */
+    fun getAcestreamIp(): String {
+        return repository.getAcestreamIp()
+    }
+    
+    /**
+     * Updates the acestream engine IP address
+     */
+    fun updateAcestreamIp(newIp: String) {
+        repository.updateAcestreamIp(newIp)
+    }
+    
+    /**
+     * Resets the acestream IP to default (127.0.0.1)
+     */
+    fun resetAcestreamIp() {
+        repository.resetAcestreamIp()
+    }
+    
+    /**
      * Refreshes all matches and links for the current section
      * This clears the cache for the current section and reloads everything fresh
      */

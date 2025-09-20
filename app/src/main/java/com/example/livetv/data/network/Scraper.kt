@@ -7,8 +7,10 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.SslErrorHandler
 import android.net.http.SslError
+import android.os.Build
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.annotation.RequiresApi
 import com.example.livetv.data.model.Match
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -952,6 +954,7 @@ class Scraper(private val context: Context) {
                         view.evaluateJavascript(script, null)
                     }
 
+                     @RequiresApi(Build.VERSION_CODES.M)
                      override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                         super.onReceivedError(view, request, error)
                         if (continuation.isActive) {

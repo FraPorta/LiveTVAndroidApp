@@ -258,14 +258,42 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                             else -> {
                                 // Match grid - optimized for TV viewing
                                 LazyVerticalGrid(
-                                    columns = GridCells.Adaptive(minSize = 400.dp), // Adaptive columns based on screen size
+                                    columns = GridCells.Fixed(2), // Fixed 2 columns for consistent row matching
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
                                     horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
                                 ) {
                                     itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
-                                        MatchItem(match = match, viewModel = viewModel)
+                                        // Calculate if the adjacent card in the same row has both types
+                                        val isEvenColumn = index % 2 == 0
+                                        val adjacentIndex = if (isEvenColumn) index + 1 else index - 1
+                                        val adjacentMatch = if (adjacentIndex < visibleMatches.size) visibleMatches[adjacentIndex] else null
+                                        
+                                        // Check if either current or adjacent card has both types
+                                        val currentHasBothTypes = run {
+                                            val aceStreamLinks = match.streamLinks.filter { url -> 
+                                                url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
+                                            }
+                                            val webStreamLinks = match.streamLinks.filter { url -> 
+                                                !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
+                                            }
+                                            aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
+                                        }
+                                        
+                                        val adjacentHasBothTypes = adjacentMatch?.let { adjMatch ->
+                                            val aceStreamLinks = adjMatch.streamLinks.filter { url -> 
+                                                url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
+                                            }
+                                            val webStreamLinks = adjMatch.streamLinks.filter { url -> 
+                                                !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
+                                            }
+                                            aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
+                                        } ?: false
+                                        
+                                        val shouldUseUniformHeight = currentHasBothTypes || adjacentHasBothTypes
+                                        
+                                        MatchItem(match = match, viewModel = viewModel, forceUniformHeight = shouldUseUniformHeight)
                                     }
 
                                     // Only show "Load More" button when search is not active
@@ -313,7 +341,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
 }
 
 @Composable
-fun MatchItem(match: Match, viewModel: MatchViewModel) {
+fun MatchItem(match: Match, viewModel: MatchViewModel, forceUniformHeight: Boolean = false) {
     val context = LocalContext.current
     
     // Helper function to identify acestream links (both original and HTTP proxy formats)
@@ -330,13 +358,13 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
     var showAceStreamDialog by remember { mutableStateOf(false) }
     var showWebStreamDialog by remember { mutableStateOf(false) }
     
-    // Dynamic height based on content - modern approach
-    val cardHeight = if (hasBothTypes) 320.dp else 200.dp
+    // Use uniform height if any card in the grid has both types, ensuring equal row heights
+    val cardHeight = if (forceUniformHeight || hasBothTypes) 300.dp else 210.dp
     
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(), // This will make all cards in a row stretch to the same height
+            .height(cardHeight), // Fixed height ensures all cards in row are equal
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         colors = CardDefaults.cardColors(
@@ -347,8 +375,7 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (hasBothTypes) 12.dp else 16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(if (hasBothTypes) 12.dp else 16.dp)
         ) {
             // Header content (teams, time, league info)
             Column(
@@ -434,7 +461,15 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
             }
             } // Close header Column
             
-            // Buttons section (will be pushed to bottom by SpaceBetween)
+            // For cards with both types, use weight to push buttons to bottom
+            // For single-type cards, use minimal spacing to keep compact
+            if (hasBothTypes || forceUniformHeight) {
+                Spacer(modifier = Modifier.weight(1f))
+            } else {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+            
+            // Buttons section
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {

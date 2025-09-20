@@ -42,6 +42,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -1277,8 +1280,20 @@ fun FocusableButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     
-    // More visible focus colors for TV
-    val actualFocusColor = focusColor.copy(alpha = 0.9f)
+    // Animated focus scale and alpha effects
+    val focusScale by animateFloatAsState(
+        targetValue = if (isFocused) 1.05f else 1f,
+        animationSpec = tween(200),
+        label = "focusScale"
+    )
+    
+    val focusAlpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0f,
+        animationSpec = tween(200),
+        label = "focusAlpha"
+    )
+    
+    // Simple focus background color
     val focusedBackgroundColor = if (isFocused) {
         backgroundColor.copy(alpha = 0.9f)
     } else {
@@ -1287,12 +1302,17 @@ fun FocusableButton(
     
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = focusScale
+                scaleY = focusScale
+            },
         shape = RoundedCornerShape(12.dp),
         color = focusedBackgroundColor,
         border = if (isFocused) {
-            BorderStroke(width = 3.dp, color = actualFocusColor)
+            BorderStroke(width = 2.dp, color = focusColor.copy(alpha = focusAlpha))
         } else null,
+        shadowElevation = if (isFocused) 6.dp else 0.dp,
         interactionSource = interactionSource,
         content = {
             Box(

@@ -398,18 +398,19 @@ fun MatchItem(match: Match, viewModel: MatchViewModel, forceUniformHeight: Boole
                     minLines = 2 // Ensure consistent height
                 )
                 
-                // Modern refresh button
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = if (match.areLinksLoading) 
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) 
-                            else 
-                                MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .clickable { viewModel.refreshMatchLinks(match) }
-                        .padding(8.dp)
+                // Modern refresh button with focus support
+                FocusableButton(
+                    onClick = { viewModel.refreshMatchLinks(match) },
+                    backgroundColor = if (match.areLinksLoading) 
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) 
+                    else 
+                        MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (match.areLinksLoading) 
+                        MaterialTheme.colorScheme.primary
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    focusColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp) // Fixed size for compact refresh button
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
@@ -763,27 +764,28 @@ fun SectionSelector(
             ) {
                 ScrapingSection.values().forEach { section ->
                     val isSelected = currentSection == section
-                    FocusableButton(
+                    Surface(
                         onClick = { onSectionChange(section) },
-                        backgroundColor = if (isSelected) 
+                        color = if (isSelected) 
                             MaterialTheme.colorScheme.primary 
                         else 
                             Color.Transparent,
-                        contentColor = if (isSelected) 
-                            MaterialTheme.colorScheme.onPrimary 
-                        else 
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        focusColor = MaterialTheme.colorScheme.tertiary,
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(
-                            text = section.displayName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isSelected) 
-                                MaterialTheme.colorScheme.onPrimary 
-                            else 
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Box(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = section.displayName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) 
+                                    MaterialTheme.colorScheme.onPrimary 
+                                else 
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -804,27 +806,28 @@ fun SectionSelector(
             ) {
                 ScrapingSection.values().forEach { section ->
                     val isSelected = currentSection == section
-                    FocusableButton(
+                    Surface(
                         onClick = { onSectionChange(section) },
-                        backgroundColor = if (isSelected) 
+                        color = if (isSelected) 
                             MaterialTheme.colorScheme.primary 
                         else 
                             Color.Transparent,
-                        contentColor = if (isSelected) 
-                            MaterialTheme.colorScheme.onPrimary 
-                        else 
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        focusColor = MaterialTheme.colorScheme.tertiary,
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(
-                            text = section.displayName,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isSelected) 
-                                MaterialTheme.colorScheme.onPrimary 
-                            else 
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Box(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = section.displayName,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isSelected) 
+                                    MaterialTheme.colorScheme.onPrimary 
+                                else 
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -1275,7 +1278,7 @@ fun FocusableButton(
     val isFocused by interactionSource.collectIsFocusedAsState()
     
     // More visible focus colors for TV
-    val actualFocusColor = focusColor.copy(alpha = 1f)
+    val actualFocusColor = focusColor.copy(alpha = 0.9f)
     val focusedBackgroundColor = if (isFocused) {
         backgroundColor.copy(alpha = 0.9f)
     } else {

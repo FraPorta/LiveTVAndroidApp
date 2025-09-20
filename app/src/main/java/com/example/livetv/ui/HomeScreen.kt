@@ -34,7 +34,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.FocusRequester 
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusTarget
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -323,12 +331,12 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
     var showWebStreamDialog by remember { mutableStateOf(false) }
     
     // Dynamic height based on content - modern approach
-    val cardHeight = if (hasBothTypes) 260.dp else 200.dp
+    val cardHeight = if (hasBothTypes) 320.dp else 200.dp
     
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(cardHeight),
+            .fillMaxHeight(), // This will make all cards in a row stretch to the same height
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         colors = CardDefaults.cardColors(
@@ -338,10 +346,15 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+                .fillMaxSize()
+                .padding(if (hasBothTypes) 12.dp else 16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header row with team names and refresh button
+            // Header content (teams, time, league info)
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Header row with team names and refresh button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -415,14 +428,17 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                     text = timeAndLeague,
                     style = MaterialTheme.typography.bodyMedium, // Changed from bodySmall to bodyMedium
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp), // Increased padding
+                    modifier = Modifier.padding(bottom = if (hasBothTypes) 4.dp else 6.dp), // Reduced padding when both types
                     maxLines = 2 // Allow 2 lines for longer text
                 )
             }
+            } // Close header Column
             
-            Spacer(modifier = Modifier.height(4.dp))
-
-            when {
+            // Buttons section (will be pushed to bottom by SpaceBetween)
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                when {
                 match.areLinksLoading -> {
                     // Compact loader for grid
                     Row(
@@ -440,13 +456,13 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                 match.streamLinks.isNotEmpty() -> {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(if (hasBothTypes) 4.dp else 6.dp)
+                        verticalArrangement = Arrangement.spacedBy(if (hasBothTypes) 6.dp else 6.dp)
                     ) {
                         // Modern Acestream Section
                         if (aceStreamLinks.isNotEmpty()) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 4.dp)
+                                modifier = Modifier.padding(bottom = if (hasBothTypes) 2.dp else 4.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -469,14 +485,11 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 aceStreamLinks.take(3).forEachIndexed { index, link ->
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = MaterialTheme.colorScheme.primary,
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable { openUrlWithChooser(context, link) }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    FocusableButton(
+                                        onClick = { openUrlWithChooser(context, link) },
+                                        backgroundColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        focusColor = MaterialTheme.colorScheme.tertiary
                                     ) {
                                         Text(
                                             text = "ACE ${index + 1}",
@@ -486,14 +499,11 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                                     }
                                 }
                                 if (aceStreamLinks.size > 3) {
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable { showAceStreamDialog = true }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    FocusableButton(
+                                        onClick = { showAceStreamDialog = true },
+                                        backgroundColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                        focusColor = MaterialTheme.colorScheme.primary
                                     ) {
                                         Text(
                                             text = "+${aceStreamLinks.size - 3}",
@@ -509,7 +519,7 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                         if (webStreamLinks.isNotEmpty()) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 4.dp)
+                                modifier = Modifier.padding(bottom = if (hasBothTypes) 2.dp else 4.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -541,36 +551,30 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                                         else -> "HTTP ${index + 1}"
                                     }
                                     
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = MaterialTheme.colorScheme.secondary,
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable { openUrlWithChooser(context, link) }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    FocusableButton(
+                                        onClick = { openUrlWithChooser(context, link) },
+                                        backgroundColor = MaterialTheme.colorScheme.tertiary,
+                                        contentColor = MaterialTheme.colorScheme.onTertiary,
+                                        focusColor = MaterialTheme.colorScheme.primary
                                     ) {
                                         Text(
                                             text = streamLabel,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondary
+                                            color = MaterialTheme.colorScheme.onTertiary
                                         )
                                     }
                                 }
                                 if (webStreamLinks.size > 3) {
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable { showWebStreamDialog = true }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    FocusableButton(
+                                        onClick = { showWebStreamDialog = true },
+                                        backgroundColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                        contentColor = MaterialTheme.colorScheme.tertiary,
+                                        focusColor = MaterialTheme.colorScheme.primary
                                     ) {
                                         Text(
                                             text = "+${webStreamLinks.size - 3}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.secondary
+                                            color = MaterialTheme.colorScheme.tertiary
                                         )
                                     }
                                 }
@@ -587,7 +591,8 @@ fun MatchItem(match: Match, viewModel: MatchViewModel) {
                     )
                 }
             }
-        }
+            } // Close buttons Column
+        } // Close main Column
     }
     
     // Acestream Dialog
@@ -723,19 +728,18 @@ fun SectionSelector(
             ) {
                 ScrapingSection.values().forEach { section ->
                     val isSelected = currentSection == section
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(
-                                color = if (isSelected) 
-                                    MaterialTheme.colorScheme.primary 
-                                else 
-                                    Color.Transparent,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .clickable { onSectionChange(section) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
+                    FocusableButton(
+                        onClick = { onSectionChange(section) },
+                        backgroundColor = if (isSelected) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            Color.Transparent,
+                        contentColor = if (isSelected) 
+                            MaterialTheme.colorScheme.onPrimary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        focusColor = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.weight(1f)
                     ) {
                         Text(
                             text = section.displayName,
@@ -765,19 +769,18 @@ fun SectionSelector(
             ) {
                 ScrapingSection.values().forEach { section ->
                     val isSelected = currentSection == section
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(
-                                color = if (isSelected) 
-                                    MaterialTheme.colorScheme.primary 
-                                else 
-                                    Color.Transparent,
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .clickable { onSectionChange(section) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        contentAlignment = Alignment.Center
+                    FocusableButton(
+                        onClick = { onSectionChange(section) },
+                        backgroundColor = if (isSelected) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            Color.Transparent,
+                        contentColor = if (isSelected) 
+                            MaterialTheme.colorScheme.onPrimary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        focusColor = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.weight(1f)
                     ) {
                         Text(
                             text = section.displayName,
@@ -1021,31 +1024,25 @@ fun UrlConfigHeader(
             }
             
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clickable { showEditDialog = true }
-                        .padding(8.dp)
+                FocusableButton(
+                    onClick = { showEditDialog = true },
+                    backgroundColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    focusColor = MaterialTheme.colorScheme.tertiary
                 ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit URL",
+                        contentDescription = "Edit Configuration",
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
                 
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clickable { onResetUrl() }
-                        .padding(8.dp)
+                FocusableButton(
+                    onClick = onResetUrl,
+                    backgroundColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                    focusColor = MaterialTheme.colorScheme.primary
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
@@ -1161,14 +1158,11 @@ fun ActionButtons(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Search button
-            Box(
-                modifier = Modifier
-                    .background(
-                        color = MaterialTheme.colorScheme.tertiary,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .clickable { onSearchClick() }
-                    .padding(8.dp)
+            FocusableButton(
+                onClick = onSearchClick,
+                backgroundColor = MaterialTheme.colorScheme.tertiary,
+                contentColor = MaterialTheme.colorScheme.onTertiary,
+                focusColor = MaterialTheme.colorScheme.primary
             ) {
                 if (isBackgroundScraping) {
                     CircularProgressIndicator(
@@ -1190,14 +1184,11 @@ fun ActionButtons(
             
             // Refresh button (for TV/tablet)
             if (showRefreshButton) {
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clickable { onRefreshClick() }
-                        .padding(8.dp)
+                FocusableButton(
+                    onClick = onRefreshClick,
+                    backgroundColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    focusColor = MaterialTheme.colorScheme.tertiary
                 ) {
                     if (isRefreshing) {
                         CircularProgressIndicator(
@@ -1219,14 +1210,11 @@ fun ActionButtons(
             }
             
             // Update button
-            Box(
-                modifier = Modifier
-                    .background(
-                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .clickable { onShowUpdateDialog() }
-                    .padding(8.dp)
+            FocusableButton(
+                onClick = onShowUpdateDialog,
+                backgroundColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+                focusColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
@@ -1239,6 +1227,46 @@ fun ActionButtons(
     }
 }
 
+@Composable
+fun FocusableButton(
+    onClick: () -> Unit,
+    backgroundColor: Color,
+    contentColor: Color,
+    focusColor: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    
+    // More visible focus colors for TV
+    val actualFocusColor = focusColor.copy(alpha = 1f)
+    val focusedBackgroundColor = if (isFocused) {
+        backgroundColor.copy(alpha = 0.9f)
+    } else {
+        backgroundColor
+    }
+    
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = focusedBackgroundColor,
+        border = if (isFocused) {
+            BorderStroke(width = 3.dp, color = actualFocusColor)
+        } else null,
+        interactionSource = interactionSource,
+        content = {
+            Box(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                content()
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchBar(
@@ -1246,6 +1274,12 @@ fun SearchBar(
     modifier: Modifier = Modifier
 ) {
     val searchQuery by viewModel.searchQuery
+    val searchFocusRequester = remember { FocusRequester() }
+    
+    // Auto-focus when search becomes active
+    LaunchedEffect(Unit) {
+        searchFocusRequester.requestFocus()
+    }
     
     // Active search bar - only shown when search is active
     Row(
@@ -1271,7 +1305,9 @@ fun SearchBar(
             value = searchQuery,
             onValueChange = { viewModel.updateSearchQuery(it) },
             placeholder = { Text("Search teams, players, leagues...") },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(searchFocusRequester),
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
                 unfocusedBorderColor = Color.Transparent,

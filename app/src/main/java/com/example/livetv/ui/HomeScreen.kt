@@ -259,42 +259,48 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 }
                             }
                             else -> {
-                                // Match grid - optimized for TV viewing
+                                // Match grid - responsive layout (1 column mobile, 2 columns TV)
                                 LazyVerticalGrid(
-                                    columns = GridCells.Fixed(2), // Fixed 2 columns for consistent row matching
+                                    columns = GridCells.Fixed(if (isCompactScreen) 1 else 2), // 1 column mobile, 2 columns TV
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
                                     horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
                                 ) {
                                     itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
-                                        // Calculate if the adjacent card in the same row has both types
-                                        val isEvenColumn = index % 2 == 0
-                                        val adjacentIndex = if (isEvenColumn) index + 1 else index - 1
-                                        val adjacentMatch = if (adjacentIndex < visibleMatches.size) visibleMatches[adjacentIndex] else null
-                                        
-                                        // Check if either current or adjacent card has both types
-                                        val currentHasBothTypes = run {
-                                            val aceStreamLinks = match.streamLinks.filter { url -> 
-                                                url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
+                                        // For single column (mobile), no row-based height matching needed
+                                        // For two columns (TV), calculate adjacent card in the same row
+                                        val shouldUseUniformHeight = if (isCompactScreen) {
+                                            false // Mobile: each card can have its own height
+                                        } else {
+                                            // TV: Calculate if the adjacent card in the same row has both types
+                                            val isEvenColumn = index % 2 == 0
+                                            val adjacentIndex = if (isEvenColumn) index + 1 else index - 1
+                                            val adjacentMatch = if (adjacentIndex < visibleMatches.size) visibleMatches[adjacentIndex] else null
+                                            
+                                            // Check if either current or adjacent card has both types
+                                            val currentHasBothTypes = run {
+                                                val aceStreamLinks = match.streamLinks.filter { url -> 
+                                                    url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
+                                                }
+                                                val webStreamLinks = match.streamLinks.filter { url -> 
+                                                    !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
+                                                }
+                                                aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
                                             }
-                                            val webStreamLinks = match.streamLinks.filter { url -> 
-                                                !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
-                                            }
-                                            aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
+                                            
+                                            val adjacentHasBothTypes = adjacentMatch?.let { adjMatch ->
+                                                val aceStreamLinks = adjMatch.streamLinks.filter { url -> 
+                                                    url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
+                                                }
+                                                val webStreamLinks = adjMatch.streamLinks.filter { url -> 
+                                                    !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
+                                                }
+                                                aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
+                                            } ?: false
+                                            
+                                            currentHasBothTypes || adjacentHasBothTypes
                                         }
-                                        
-                                        val adjacentHasBothTypes = adjacentMatch?.let { adjMatch ->
-                                            val aceStreamLinks = adjMatch.streamLinks.filter { url -> 
-                                                url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
-                                            }
-                                            val webStreamLinks = adjMatch.streamLinks.filter { url -> 
-                                                !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
-                                            }
-                                            aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
-                                        } ?: false
-                                        
-                                        val shouldUseUniformHeight = currentHasBothTypes || adjacentHasBothTypes
                                         
                                         MatchItem(match = match, viewModel = viewModel, forceUniformHeight = shouldUseUniformHeight)
                                     }

@@ -1,16 +1,11 @@
 # LiveTV Android TV App
 
-A modern Android TV app for streaming live sports with a focus on football matches. Features a clean Material Design interface with configurable sources, multiple stream format support, and automatic update functionality.
+A modern Android TV app for streaming. Features a clean Material Design interface with configurable sources, multiple stream format support, and automatic update functionality.
 
 ![Build Status](https://github.com/FraPorta/LiveTVAndroidApp/workflows/Build%20and%20Release%20Android%20APK/badge.svg)
 
-## 📱 Screenshots
-
-### Mobile Interface
-<img src="docs/Screenshot_20250915_175717_LiveTV.jpg" alt="Mobile Interface" width="280" />
-
-### Android TV Interface  
-<img src="docs/Screenshot_20250915_180337.png" alt="Android TV Interface" width="560" />
+## Android TV Interface  
+<img src="docs/Screenshot_20251003_112557.png" alt="Android TV Interface" width="560" />
 
 ## 📱 Download & Install
 
@@ -36,8 +31,6 @@ A modern Android TV app for streaming live sports with a focus on football match
 - **🔒 Secure Updates**: Signed APK verification for safe installations  
 - **🌐 Multi-Source**: Acestream, M3U8, RTMP, and web streams
 - **⚙️ Configurable**: Customizable scraping source URLs
-- **🔗 Intent Chooser**: Native Android app selection for streams
-- **🛠️ Developer Tools**: Automatic version management and CI/CD
 
 ## 🚀 Quick Start
 
@@ -46,12 +39,6 @@ A modern Android TV app for streaming live sports with a focus on football match
 2. Install on your Android TV/device  
 3. Launch and enjoy live sports!
 4. **Pro tip**: Use the built-in "Check for Updates" feature to stay current with the latest version!
-
-### For Developers
-1. Clone the repository
-2. Open in Android Studio
-3. Sync Gradle files
-4. Build and run
 
 ## 🛠️ Development
 
@@ -74,33 +61,6 @@ cd LiveTVAndroidApp
 ./gradlew assembleRelease
 ```
 
-### Release Keystore Setup
-For signed releases, set up your release keystore:
-
-```bash
-# Generate keystore using Android Studio or run setup script
-./setup-github-secrets.sh
-
-# Add GitHub Secrets for CI/CD:
-# - KEYSTORE_B64 (base64 encoded keystore)
-# - RELEASE_STORE_PASSWORD
-# - RELEASE_KEY_ALIAS  
-# - RELEASE_KEY_PASSWORD
-```
-
-### Creating Releases
-```bash
-# Simply update version in app/build.gradle.kts and push!
-git add .
-git commit -m "Add new features and improvements"  
-git push origin master
-# 🎉 Release is automatically created with proper signing!
-
-# Optional: Create tagged releases for milestones
-git tag v1.2.0
-git push origin v1.2.0
-```
-
 ## 🔄 Automated Deployment
 
 This project uses GitHub Actions for **fully automated** releases:
@@ -111,8 +71,6 @@ This project uses GitHub Actions for **fully automated** releases:
 - **🛠️ Manual triggers**: On-demand builds for testing
 
 **✨ No manual release process needed - just push your code!**
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment information.
 
 ## 🔄 Auto-Update System
 

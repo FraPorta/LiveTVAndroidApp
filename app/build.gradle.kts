@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.livetv"
         minSdk = 21
         targetSdk = 33
-        versionCode = 21
-        versionName = "1.0.19"
+        versionCode = 22
+        versionName = "1.0.20"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

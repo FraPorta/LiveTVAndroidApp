@@ -16,7 +16,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.launch
 import org.jsoup.Jsoup
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -926,87 +925,82 @@ class Scraper(private val context: Context) {
     }
 
     private suspend fun fetchHtmlWithWebView(url: String, waitForSelector: String): String? = withTimeoutOrNull(20000) { // 20 second timeout
-        suspendCancellableCoroutine<String?> { continuation ->
-            // Must run WebView on the main thread
-            // No need for withContext(Dispatchers.Main) if the calling coroutine is already on Main
-            // But to be safe, let's ensure it. However, since this is a suspend function,
-            // the caller's context matters. Let's assume for now the caller handles the Main thread.
-            // The ViewModel will call this from Dispatchers.IO, so we must switch to Main.
-            kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-                Log.d("ScraperWebView", "Creating WebView for $url")
-                val webView = WebView(context)
-
-                val webAppInterface = WebAppInterface { html ->
-                    if (continuation.isActive) {
-                        continuation.resume(html)
-                    }
-                    // It's crucial to destroy the WebView on the main thread
-                    webView.destroy()
-                }
-
-                val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-                webView.settings.userAgentString = desktopUserAgent
-                webView.settings.javaScriptEnabled = true
-                webView.settings.domStorageEnabled = true
-                webView.settings.allowFileAccess = true
-                webView.settings.allowContentAccess = true
-                // FIX #4: allowUniversalAccessFromFileURLs removed — it allowed JS to bypass
-                // the Same-Origin Policy and read arbitrary local files. Default (false) is secure.
-                webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                webView.addJavascriptInterface(webAppInterface, "Android")
-
-                webView.webViewClient = object : WebViewClient() {
-                    // FIX #2: Cancel rather than proceed on SSL errors. Silently proceeding
-                    // allowed MITM attacks inside the WebView scraping session.
-                    override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                        Log.e("ScraperWebView", "SSL error (cancelled): primaryError=${error?.primaryError}, url=${error?.url}")
-                        handler?.cancel()
-                    }
-
-                    override fun onPageFinished(view: WebView, url: String) {
-                        Log.d("ScraperWebView", "onPageFinished for $url. Injecting polling script.")
-                        val script = """
-                            (function() {
-                                const selector = '$waitForSelector';
-                                const maxTries = 40; // Increased from 20
-                                let tries = 0;
-                                const interval = setInterval(() => {
-                                    const elementFound = document.querySelector(selector);
-                                    if (elementFound || tries >= maxTries) {
-                                        clearInterval(interval);
-                                        if(elementFound) {
-                                            Android.processHTML(document.documentElement.outerHTML);
-                                        } else {
-                                            // If element is not found after all tries, return the whole html
-                                            // to allow for fallback parsing.
-                                            Android.processHTML(document.documentElement.outerHTML);
-                                        }
-                                    }
-                                    tries++;
-                                }, 500);
-                            })();
-                        """
-                        view.evaluateJavascript(script, null)
-                    }
-
-                     @RequiresApi(Build.VERSION_CODES.M)
-                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                        super.onReceivedError(view, request, error)
+        // FIX #13/#14: Use withContext(Dispatchers.Main) instead of GlobalScope.launch so the
+        // WebView lifetime is tied to the calling coroutine's scope (viewModelScope). The outer
+        // try/finally is the single, reliable cleanup point — it fires on normal completion,
+        // cancellation, and exceptions alike, replacing the unreliable invokeOnCancellation lambda.
+        withContext(Dispatchers.Main) {
+            Log.d("ScraperWebView", "Creating WebView for $url")
+            val webView = WebView(context)
+            try {
+                suspendCancellableCoroutine<String?> { continuation ->
+                    val webAppInterface = WebAppInterface { html ->
                         if (continuation.isActive) {
-                            continuation.resumeWithException(RuntimeException("WebView error: ${error?.description}"))
+                            continuation.resume(html)
                         }
-                        view?.destroy()
+                        // Cleanup handled by the outer try/finally; do not call webView.destroy() here.
                     }
-                }
 
-                continuation.invokeOnCancellation {
-                    // Ensure WebView is destroyed on the main thread if the coroutine is cancelled
-                     kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-                        webView.destroy()
+                    val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                    webView.settings.userAgentString = desktopUserAgent
+                    webView.settings.javaScriptEnabled = true
+                    webView.settings.domStorageEnabled = true
+                    webView.settings.allowFileAccess = true
+                    webView.settings.allowContentAccess = true
+                    // FIX #4: allowUniversalAccessFromFileURLs removed — it allowed JS to bypass
+                    // the Same-Origin Policy and read arbitrary local files. Default (false) is secure.
+                    webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    webView.addJavascriptInterface(webAppInterface, "Android")
+
+                    webView.webViewClient = object : WebViewClient() {
+                        // FIX #2: Cancel rather than proceed on SSL errors. Silently proceeding
+                        // allowed MITM attacks inside the WebView scraping session.
+                        override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                            Log.e("ScraperWebView", "SSL error (cancelled): primaryError=${error?.primaryError}, url=${error?.url}")
+                            handler?.cancel()
+                        }
+
+                        override fun onPageFinished(view: WebView, url: String) {
+                            Log.d("ScraperWebView", "onPageFinished for $url. Injecting polling script.")
+                            val script = """
+                                (function() {
+                                    const selector = '$waitForSelector';
+                                    const maxTries = 40; // Increased from 20
+                                    let tries = 0;
+                                    const interval = setInterval(() => {
+                                        const elementFound = document.querySelector(selector);
+                                        if (elementFound || tries >= maxTries) {
+                                            clearInterval(interval);
+                                            if(elementFound) {
+                                                Android.processHTML(document.documentElement.outerHTML);
+                                            } else {
+                                                // If element is not found after all tries, return the whole html
+                                                // to allow for fallback parsing.
+                                                Android.processHTML(document.documentElement.outerHTML);
+                                            }
+                                        }
+                                        tries++;
+                                    }, 500);
+                                })();
+                            """
+                            view.evaluateJavascript(script, null)
+                        }
+
+                         @RequiresApi(Build.VERSION_CODES.M)
+                         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                            super.onReceivedError(view, request, error)
+                            if (continuation.isActive) {
+                                continuation.resumeWithException(RuntimeException("WebView error: ${error?.description}"))
+                            }
+                            // Cleanup handled by the outer try/finally; do not call view?.destroy() here.
+                        }
                     }
-                }
 
-                webView.loadUrl(url)
+                    webView.loadUrl(url)
+                }
+            } finally {
+                // Single, reliable cleanup: covers normal completion, cancellation, and exceptions.
+                webView.destroy()
             }
         }
     }

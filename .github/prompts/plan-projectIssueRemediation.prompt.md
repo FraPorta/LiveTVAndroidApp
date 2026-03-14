@@ -38,9 +38,9 @@ The project has 44 distinct issues across security, bugs, memory, performance, a
 
 ### High — Memory Leaks
 
-13. **`GlobalScope.launch` for WebView** — [Scraper.kt ~L904](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L904): Pass a `CoroutineScope` (tied to the ViewModel or caller) into `Scraper`, and replace both `GlobalScope.launch(Dispatchers.Main)` calls with that scoped dispatcher.
+13. ✅ ~~**`GlobalScope.launch` for WebView** — [Scraper.kt ~L904](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L904): Replaced `GlobalScope.launch(Dispatchers.Main)` with `withContext(Dispatchers.Main)`, so the WebView coroutine inherits the calling scope (which flows from `viewModelScope`) instead of leaking into `GlobalScope`. Removed the unused `import kotlinx.coroutines.launch`.~~
 
-14. **Unreliable WebView cleanup** — [Scraper.kt ~L966](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L966): Consolidate WebView destruction into a single `try/finally` block in `fetchHtmlWithWebView` rather than a cancellation lambda that re-launches a coroutine.
+14. ✅ ~~**Unreliable WebView cleanup** — [Scraper.kt ~L966](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L966): Consolidated WebView destruction into a single `try/finally` block wrapping `suspendCancellableCoroutine`. Removed `webView.destroy()` from the `WebAppInterface` callback and `view?.destroy()` from `onReceivedError`; removed the `invokeOnCancellation` lambda that re-launched a `GlobalScope` coroutine. `finally` now handles all cases: normal completion, exceptions, and cancellation.~~
 
 ---
 

@@ -61,7 +61,10 @@ android {
                 println("Warning: Using debug keystore for release build. Set RELEASE_STORE_PASSWORD to use release keystore.")
                 signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = false
+            // FIX #26: Enable R8 minification and obfuscation for release builds.
+            // proguard-rules.pro keeps WebView JS bridge classes, OkHttp internals, and
+            // Jsoup so R8 doesn't strip them.
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -77,6 +80,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // FIX #26/#18: Ensure BuildConfig is generated (required for BuildConfig.DEBUG guards
+        // added to Scraper.kt; explicit in AGP 8+ where it defaults to false).
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"

@@ -1,11 +1,10 @@
 package com.example.livetv.ui.updater
 
-import android.content.Context
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.livetv.data.updater.DownloadResult
 import com.example.livetv.data.updater.UpdateManager
@@ -13,9 +12,13 @@ import com.example.livetv.data.updater.UpdateResult
 import kotlinx.coroutines.launch
 import java.io.File
 
-class UpdateViewModel(private val context: Context) : ViewModel() {
+// FIX #29: Changed from ViewModel(context: Context) to AndroidViewModel(application) so the
+// ViewModel holds a reference to Application (process-scoped) rather than an Activity context
+// (which would be leaked for the ViewModel's lifetime). The default ViewModelProvider factory
+// auto-injects Application into AndroidViewModel subclasses, so no custom factory is needed.
+class UpdateViewModel(application: Application) : AndroidViewModel(application) {
     
-    private val updateManager = UpdateManager(context)
+    private val updateManager = UpdateManager(application.applicationContext)
     
     var updateState by mutableStateOf<UpdateState>(UpdateState.Idle)
         private set
@@ -107,13 +110,3 @@ data class DownloadProgress(
     val total: Long,
     val percentage: Float
 )
-
-class UpdateViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(UpdateViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return UpdateViewModel(context) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
-}

@@ -22,12 +22,8 @@ import kotlin.coroutines.resumeWithException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.example.livetv.data.preferences.UrlPreferences
-
-enum class ScrapingSection(val displayName: String, val selector: String) {
-    FOOTBALL("Football", ":not(#upcoming)"),
-    TOP_EVENTS_LIVE("Top Live", "#upcoming"),
-    ALL("All", "")
-}
+import com.example.livetv.data.model.ScrapingSection
+import com.example.livetv.BuildConfig
 
 class Scraper(private val context: Context) {
 
@@ -59,6 +55,20 @@ class Scraper(private val context: Context) {
     private data class HtmlCacheEntry(val url: String, val html: String, val fetchedAt: Long)
     @Volatile private var htmlCache: HtmlCacheEntry? = null
     private val HTML_CACHE_TTL_MS = 60_000L // 60 seconds
+
+    companion object {
+        // FIX #17: Pre-compiled regex, reused across all JS-scanning calls in fetchStreamLinks
+        // instead of being rebuilt on every iteration of the scriptTags forEach loop.
+        private val JS_URL_REGEX = """https?://[^\s"'<>]+(?:\.m3u8|stream|live|watch|player)""".toRegex(RegexOption.IGNORE_CASE)
+
+        // FIX #27: Single source of truth for football-related keywords.
+        // Previously hard-coded twice (in scrapeMatchList and scrapeAllMatches), now referenced
+        // from both call sites so a future keyword addition only needs one change.
+        val FOOTBALL_KEYWORDS: Set<String> = setOf(
+            "football", "soccer", "premier", "liga", "bundesliga", "serie a",
+            "ligue", "champions league", "europa league", "uefa", "fifa", "world cup"
+        )
+    }
 
     /**
      * Scrapes the main page to get a list of upcoming matches, but doesn't
@@ -269,22 +279,10 @@ class Scraper(private val context: Context) {
             // Apply section-specific filtering
             val filteredMatches = when (section) {
                 ScrapingSection.FOOTBALL -> {
-                    // Filter matches to only include football-related ones
+                    // FIX #27: Use shared FOOTBALL_KEYWORDS constant
                     val footballMatches = uniqueMatches.filter { match ->
                         val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                        combinedText.contains("football") || 
-                        combinedText.contains("soccer") ||
-                        combinedText.contains("premier") || 
-                        combinedText.contains("liga") ||
-                        combinedText.contains("bundesliga") || 
-                        combinedText.contains("serie a") ||
-                        combinedText.contains("ligue") ||
-                        combinedText.contains("champions league") ||
-                        combinedText.contains("europa league") ||
-                        combinedText.contains("uefa") ||
-                        combinedText.contains("fifa") ||
-                        combinedText.contains("world cup") ||
-                        match.sport.lowercase() == "football"
+                        FOOTBALL_KEYWORDS.any { combinedText.contains(it) } || match.sport.lowercase() == "football"
                     }
                     Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
                     footballMatches
@@ -450,21 +448,10 @@ class Scraper(private val context: Context) {
             
             val filteredMatches = when (section) {
                 ScrapingSection.FOOTBALL -> {
+                    // FIX #27: Use shared FOOTBALL_KEYWORDS constant
                     uniqueMatches.filter { match ->
                         val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                        combinedText.contains("football") || 
-                        combinedText.contains("soccer") ||
-                        combinedText.contains("premier") || 
-                        combinedText.contains("liga") ||
-                        combinedText.contains("bundesliga") || 
-                        combinedText.contains("serie a") ||
-                        combinedText.contains("ligue") ||
-                        combinedText.contains("champions league") ||
-                        combinedText.contains("europa league") ||
-                        combinedText.contains("uefa") ||
-                        combinedText.contains("fifa") ||
-                        combinedText.contains("world cup") ||
-                        match.sport.lowercase() == "football"
+                        FOOTBALL_KEYWORDS.any { combinedText.contains(it) } || match.sport.lowercase() == "football"
                     }
                 }
                 else -> uniqueMatches
@@ -525,7 +512,7 @@ class Scraper(private val context: Context) {
             combinedText.contains("ufc") -> {
                 sport = "Combat Sports"
             }
-            combinedText.contains("formula") || combinedText.contains("f1") || 
+            combinedText.contains("formula") || combinedText.contains(Regex("""\bf1\b""", RegexOption.IGNORE_CASE)) ||
             combinedText.contains("motogp") || combinedText.contains("racing") -> {
                 sport = "Motor Sports"
             }
@@ -678,10 +665,8 @@ class Scraper(private val context: Context) {
             val scriptTags = doc.select("script")
             scriptTags.forEach { script ->
                 val scriptContent = script.html()
-                
-                // Extract URLs from JavaScript
-                val urlRegex = """https?://[^\s"'<>]+(?:\.m3u8|stream|live|watch|player)""".toRegex(RegexOption.IGNORE_CASE)
-                val jsUrls = urlRegex.findAll(scriptContent).map { it.value }.toList()
+                // FIX #17: Use pre-compiled companion-object regex instead of recompiling each iteration
+                val jsUrls = JS_URL_REGEX.findAll(scriptContent).map { it.value }.toList()
                 links.addAll(jsUrls)
             }
 
@@ -754,39 +739,44 @@ class Scraper(private val context: Context) {
                 }
             }
             
-            // Debug: Log all found URLs before filtering
-            Log.d("Scraper", "Found ${transformedLinks.size} URLs before filtering:")
-            transformedLinks.forEach { url ->
-                Log.d("Scraper", "URL: $url")
+            // FIX #18: Guard O(n) per-URL diagnostic logging behind DEBUG so it doesn't
+            // emit one log line per URL in release builds.
+            if (BuildConfig.DEBUG) {
+                Log.d("Scraper", "Found ${transformedLinks.size} URLs before filtering:")
+                transformedLinks.forEach { url ->
+                    Log.d("Scraper", "URL: $url")
+                }
             }
-            
+
             // Filter out invalid or incomplete URLs
             val finalLinks = transformedLinks.filter { link ->
                 val isValid = isValidStreamUrl(link)
-                if (!isValid) {
+                if (!isValid && BuildConfig.DEBUG) {
                     Log.d("Scraper", "FILTERED OUT invalid URL: $link")
                 }
                 isValid
             }
             
             Log.d("Scraper", "Final valid URLs: ${finalLinks.size}")
-            
             Log.d("Scraper", "Found ${transformedLinks.size} total links, ${finalLinks.size} valid stream links for $detailPageUrl")
-            if (transformedLinks.size != finalLinks.size) {
+            // FIX #18: Building the stream-types summary string is O(n) work; keep it debug-only.
+            if (BuildConfig.DEBUG && transformedLinks.size != finalLinks.size) {
                 val filteredOut = transformedLinks - finalLinks.toSet()
                 Log.d("Scraper", "Filtered out ${filteredOut.size} invalid links: ${filteredOut.joinToString()}")
             }
-            Log.d("Scraper", "Stream types found: ${finalLinks.joinToString(", ") { 
-                when {
-                    it.startsWith("acestream://") -> "Acestream"
-                    it.contains("/ace/getstream?id=") -> "Acestream (HTTP Proxy)"
-                    it.contains(".m3u8") -> "M3U8/HLS"
-                    it.startsWith("rtmp") -> "RTMP"
-                    it.contains("youtube.com") || it.contains("youtu.be") -> "YouTube"
-                    it.contains("twitch.tv") -> "Twitch"
-                    else -> "HTTP/Web"
-                }
-            }}")
+            if (BuildConfig.DEBUG) {
+                Log.d("Scraper", "Stream types found: ${finalLinks.joinToString(", ") { 
+                    when {
+                        it.startsWith("acestream://") -> "Acestream"
+                        it.contains("/ace/getstream?id=") -> "Acestream (HTTP Proxy)"
+                        it.contains(".m3u8") -> "M3U8/HLS"
+                        it.startsWith("rtmp") -> "RTMP"
+                        it.contains("youtube.com") || it.contains("youtu.be") -> "YouTube"
+                        it.contains("twitch.tv") -> "Twitch"
+                        else -> "HTTP/Web"
+                    }
+                }}")
+            }
             
             finalLinks
         } catch (e: Exception) {

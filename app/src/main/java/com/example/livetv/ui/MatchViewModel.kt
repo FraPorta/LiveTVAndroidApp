@@ -7,7 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.livetv.data.model.Match
 import com.example.livetv.data.repository.MatchRepository
-import com.example.livetv.data.network.ScrapingSection
+import com.example.livetv.data.model.ScrapingSection
 import kotlinx.coroutines.launch
 
 const val INITIAL_LOAD_SIZE = 16

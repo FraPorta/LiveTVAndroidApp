@@ -56,11 +56,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.livetv.data.model.Match
-import com.example.livetv.data.network.ScrapingSection
+import com.example.livetv.data.model.ScrapingSection
 import com.example.livetv.ui.updater.UpdateDialog
 import com.example.livetv.ui.updater.UpdateViewModel
 
@@ -72,15 +69,9 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val errorMessage by viewModel.errorMessage
     val isRefreshing by viewModel.isRefreshing
     
-    // Update functionality
-    val context = LocalContext.current
-    val updateViewModel: UpdateViewModel = viewModel(
-        factory = viewModelFactory {
-            initializer {
-                UpdateViewModel(context)
-            }
-        }
-    )
+    // FIX #29: UpdateViewModel is now AndroidViewModel; the default viewModel() factory
+    // automatically injects Application so no custom factory is needed.
+    val updateViewModel: UpdateViewModel = viewModel()
     var showUpdateDialog by remember { mutableStateOf(false) }
 
     // Always show headers and main layout, only content area changes based on state
@@ -267,7 +258,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
                                     horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
                                 ) {
-                                    itemsIndexed(visibleMatches, key = { index, _ -> "match_$index" }) { index, match ->
+                                    // FIX #19: Use the stable detailPageUrl as the item key
+                                    // so Compose can correctly identity and diff items on recomposition
+                                    // (index-based keys cause incorrect animations and unnecessary
+                                    // recomposition when the list order changes).
+                                    itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { index, match ->
                                         // For single column (mobile), no row-based height matching needed
                                         // For two columns (TV), calculate adjacent card in the same row
                                         val shouldUseUniformHeight = if (isCompactScreen) {

@@ -54,33 +54,33 @@ The project has 44 distinct issues across security, bugs, memory, performance, a
 
 ### Medium — Code Quality & Performance
 
-17. **Regex compiled inside loop** — [Scraper.kt ~L654](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L654): Move `urlRegex` to a `companion object val`.
+17. ✅ ~~**Regex compiled inside loop** — [Scraper.kt ~L654](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L654): Moved `urlRegex` into a `companion object val JS_URL_REGEX` (added alongside `FOOTBALL_KEYWORDS`). The `scriptTags.forEach` loop now references `JS_URL_REGEX` directly.~~
 
-18. **Excessive diagnostic logging in release** — [Scraper.kt ~L88](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L88): Wrap these O(n) `Log.d` blocks in `if (BuildConfig.DEBUG)` guards.
+18. ✅ ~~**Excessive diagnostic logging in release** — [Scraper.kt ~L88](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L88): Wrapped the O(n) per-URL logging block (`Found N URLs before filtering`, per-URL `URL: …` lines, `FILTERED OUT`, `Stream types found`) in `if (BuildConfig.DEBUG)` guards. Added `buildConfig = true` to `buildFeatures` so `BuildConfig` is generated in AGP 8+.~~
 
-19. **Index-based `key` in `LazyVerticalGrid`** — [HomeScreen.kt ~L259](app/src/main/java/com/example/livetv/ui/HomeScreen.kt#L259): Use a stable identity from `Match` (e.g., its URL or a combination of team names and time) as the key.
+19. ✅ ~~**Index-based `key` in `LazyVerticalGrid`** — [HomeScreen.kt ~L259](app/src/main/java/com/example/livetv/ui/HomeScreen.kt#L259): Changed `key = { index, _ -> "match_$index" }` to `key = { _, match -> match.detailPageUrl }`. This gives Compose a stable, identity-correct key so it can correctly diff recompositions when list items shift positions.~~
 
-20. **`scrapeMatchList` / `scrapeAllMatches` duplication** — [Scraper.kt ~L302](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L302): Extract a shared `parseMatchRows(doc, limit)` function; `scrapeMatchList` passes a page limit, `scrapeAllMatches` passes `Int.MAX_VALUE`.
+20. **`scrapeMatchList` / `scrapeAllMatches` duplication** — [Scraper.kt ~L302](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L302): Extract a shared `parseMatchRows(doc, limit)` function; `scrapeMatchList` passes a page limit, `scrapeAllMatches` passes `Int.MAX_VALUE`. *(Large refactor — deferred.)*
 
-21. **Empty `ScrapeSection.kt` / misplaced enum** — [ScrapeSection.kt](app/src/main/java/com/example/livetv/data/model/ScrapeSection.kt): Move `ScrapingSection` enum from `Scraper.kt` into this file and delete the dead declaration.
+21. ✅ ~~**Empty `ScrapeSection.kt` / misplaced enum** — [ScrapeSection.kt](app/src/main/java/com/example/livetv/data/model/ScrapeSection.kt): Moved `ScrapingSection` enum from `Scraper.kt` (package `data.network`) into `ScrapeSection.kt` (package `data.model`) where it belongs as a domain type. Updated imports in `Scraper.kt`, `MatchViewModel.kt`, `HomeScreen.kt`, and `MatchRepository.kt`.~~
 
-22. **1391-line `HomeScreen.kt`** — [HomeScreen.kt](app/src/main/java/com/example/livetv/ui/HomeScreen.kt): Split into composable files: `MatchItem.kt`, `SectionSelector.kt`, `SearchBar.kt`, `SettingsDialog.kt`, `UpdateDialog.kt`.
+22. **1391-line `HomeScreen.kt`** — [HomeScreen.kt](app/src/main/java/com/example/livetv/ui/HomeScreen.kt): Split into composable files: `MatchItem.kt`, `SectionSelector.kt`, `SearchBar.kt`, `SettingsDialog.kt`, `UpdateDialog.kt`. *(Large refactor — deferred.)*
 
-23. **Duplicate `SectionData` + top-level vars in ViewModel** — [MatchViewModel.kt ~L20](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L20): Eliminate the top-level vars; read/write exclusively through `sectionCache[currentSection]`, removing `saveCurrentSectionData()` / `restoreSectionData()`.
+23. **Duplicate `SectionData` + top-level vars in ViewModel** — [MatchViewModel.kt ~L20](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L20): Eliminate the top-level vars; read/write exclusively through `sectionCache[currentSection]`, removing `saveCurrentSectionData()` / `restoreSectionData()`. *(Large refactor — deferred.)*
 
-24. **`loadMoreMatches()` bypasses search filter** — [MatchViewModel.kt ~L312](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L312): Ensure `loadMoreMatches()` uses the same code path as `refreshVisibleMatches()` so search is consistently applied.
+24. **`loadMoreMatches()` bypasses search filter** — [MatchViewModel.kt ~L312](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L312): `loadMoreMatchesInternal()` already calls `getFilteredMatches()` (which includes the search filter), but `hasActiveFilters()` only checks sport/league — not the search query — so the early-exit path when search is active does not show all results at once (unlike `refreshVisibleMatches()`). The "Load More" button is intentionally hidden during search so the impact is cosmetic; full fix deferred.
 
-25. **`com.example` package** — [app/build.gradle.kts](app/build.gradle.kts#L12): Rename to a real reverse-domain namespace (e.g., `com.fporta.livetv`). This requires a manifest rename and file structure refactor — worth doing before any Play Store submission.
+25. **`com.example` package** — [app/build.gradle.kts](app/build.gradle.kts#L12): Rename to a real reverse-domain namespace (e.g., `com.fporta.livetv`). This requires a manifest rename and file structure refactor — worth doing before any Play Store submission. *(Breaking change — deferred.)*
 
-26. **`isMinifyEnabled = false`** — [app/build.gradle.kts](app/build.gradle.kts#L67): Enable R8 minification/obfuscation in the release build type and add a `proguard-rules.pro` file to keep necessary classes (WebView interfaces, OkHttp, Jsoup).
+26. ✅ ~~**`isMinifyEnabled = false`** — [app/build.gradle.kts](app/build.gradle.kts#L67): Set `isMinifyEnabled = true` for release. Created `proguard-rules.pro` with keeps for: `@JavascriptInterface` bridge methods, OkHttp, Jsoup, Kotlinx-Serialization, Kotlin Coroutines, data model classes, `FileProvider`, and `-assumenosideeffects` rules to strip `Log.v`/`Log.d` in release.~~
 
-27. **Hardcoded football keyword list duplicated** — [Scraper.kt ~L243](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L243): Extract to one `companion object val FOOTBALL_KEYWORDS: Set<String>` and reference it from both call sites.
+27. ✅ ~~**Hardcoded football keyword list duplicated** — [Scraper.kt ~L243](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L243): Extracted to `companion object val FOOTBALL_KEYWORDS: Set<String>`. Both `scrapeMatchList` and `scrapeAllMatches` now use `FOOTBALL_KEYWORDS.any { combinedText.contains(it) }` instead of the duplicated 12-item `||` chain.~~
 
-28. **`"f1"` false-positive substring match** — [Scraper.kt ~L471](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L471): Use a word-boundary regex `\\bf1\\b` (case-insensitive) or explicit string list matching instead of `contains("f1")`.
+28. ✅ ~~**`"f1"` false-positive substring match** — [Scraper.kt ~L471](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L471): Replaced `combinedText.contains("f1")` with `combinedText.contains(Regex("""\bf1\b""", RegexOption.IGNORE_CASE))`. Word-boundary anchors prevent "f1" from matching inside strings like `"div1"`, `"nfl1"`, URLs, etc.~~
 
-29. **Activity `Context` in `UpdateViewModel`** — [UpdateViewModel.kt ~L16](app/src/main/java/com/example/livetv/ui/updater/UpdateViewModel.kt#L16): Change to `AndroidViewModel(application)` and use `application.applicationContext` everywhere inside.
+29. ✅ ~~**Activity `Context` in `UpdateViewModel`** — [UpdateViewModel.kt ~L16](app/src/main/java/com/example/livetv/ui/updater/UpdateViewModel.kt#L16): Converted to `AndroidViewModel(application)`; `UpdateManager` now receives `application.applicationContext`. Deleted `UpdateViewModelFactory` (no longer needed — the default Jetpack factory auto-provides Application). Updated `HomeScreen.kt` and `UpdateDialog.kt` to use `viewModel()` with no custom factory.~~
 
-30. **Deprecated `accompanist-swiperefresh`** — [app/build.gradle.kts](app/build.gradle.kts#L112): Replace with Material3's `PullToRefreshBox` (available from `compose-bom 2024.x` onward, which requires the dependency update in step 32).
+30. **Deprecated `accompanist-swiperefresh`** — [app/build.gradle.kts](app/build.gradle.kts#L112): Replace with Material3's `PullToRefreshBox` (available from `compose-bom 2024.x` onward, which requires the dependency update in step 32). *(Blocked on issue 32 dependency bump — deferred.)*
 
 ---
 

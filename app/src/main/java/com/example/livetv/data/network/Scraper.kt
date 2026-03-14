@@ -83,236 +83,14 @@ class Scraper(private val context: Context) {
         offset: Int = 0
     ): List<Match> = withContext(Dispatchers.IO) {
         val url = urlPreferences.getBaseUrl()
-        val baseOrigin = baseOriginOf(url) // FIX #12: resolve relative links against configured host
-        Log.d("Scraper", "Fetching initial match list from: $url")
-        
+        val baseOrigin = baseOriginOf(url)
+        Log.d("Scraper", "Fetching initial match list from: $url (section: ${section.displayName})")
         try {
-            // Use the configured URL from preferences
-            val html = fetchHtmlWithOkHttp(url)
-            
-            val doc = Jsoup.parse(html)
-            val matches = mutableListOf<Match>()
-            
-            Log.d("Scraper", "Scraping section: ${section.displayName}")
-
-            // Filter document by section if specified
-            val sectionDoc = when (section) {
-                ScrapingSection.ALL -> doc
-                ScrapingSection.TOP_EVENTS_LIVE -> {
-                    val upcomingSection = doc.select("#upcoming").first()
-                    if (upcomingSection != null) {
-                        Log.d("Scraper", "Found 'upcoming' section with ${upcomingSection.select("a").size} links")
-                        upcomingSection
-                    } else {
-                        Log.d("Scraper", "No 'upcoming' section found, falling back to full document")
-                        doc
-                    }
-                }
-                ScrapingSection.FOOTBALL -> {
-                    val allExceptUpcoming = doc.clone()
-                    allExceptUpcoming.select("#upcoming").remove()
-                    Log.d("Scraper", "No specific football section found, using document without #upcoming section")
-                    allExceptUpcoming
-                }
-            }
-
-            // Try multiple selectors to find match links
-            var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
-            Log.d("Scraper", "Found ${detailLinks.size} links with '/enx/event/' pattern in ${section.displayName} section")
-            
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='/event/']")
-                Log.d("Scraper", "Found ${detailLinks.size} links with '/event/' pattern")
-            }
-            
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='event']")
-                Log.d("Scraper", "Found ${detailLinks.size} links containing 'event'")
-            }
-            
-            // Let's also check what links we do have
-            val allLinks = sectionDoc.select("a[href]")
-            Log.d("Scraper", "Total links found in section: ${allLinks.size}")
-            
-            if (allLinks.isNotEmpty() && detailLinks.isEmpty()) {
-                Log.d("Scraper", "Sample of first 10 links found:")
-                allLinks.take(10).forEach { link ->
-                    Log.d("Scraper", "Link: ${link.attr("href")} - Text: ${link.text().take(50)}")
-                }
-            }
-            
-            if (detailLinks.isEmpty()) {
-                // Check for tables or other structures that might contain matches
-                val tables = sectionDoc.select("table")
-                Log.d("Scraper", "Found ${tables.size} tables in the section")
-                
-                val divs = sectionDoc.select("div")
-                Log.d("Scraper", "Found ${divs.size} div elements in the section")
-                
-                // Look for any elements that might contain match information
-                val matchKeywords = sectionDoc.select(":contains(vs), :contains(VS), :contains(-), :contains(football), :contains(match)")
-                Log.d("Scraper", "Found ${matchKeywords.size} elements containing match-related keywords")
-                
-                Log.d("Scraper", "Section text (first 500 chars): ${sectionDoc.text().take(500)}")
-            }
-
-            // Process the links we found
-            for (link in detailLinks) {
-                val href = link.attr("href")
-                if (href.isBlank()) continue
-                
-                val detailPageUrl = if (href.startsWith("http")) {
-                    href
-                } else if (href.startsWith("/")) {
-                    "$baseOrigin$href"
-                } else {
-                    "$baseOrigin/$href"
-                }
-                
-                Log.d("Scraper", "Processing link: $detailPageUrl")
-                
-                // Try to find the match information in various ways
-                var row = link.closest("tr")
-                if (row == null) row = link.parent()
-                if (row == null) row = link
-                
-                var time = ""
-                var teams = ""
-                var competition = ""
-                
-                // Enhanced selectors for match information based on livetv.sx structure
-                if (row != null) {
-                    // Time extraction - try multiple approaches
-                    time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
-                    
-                    // Team extraction - try multiple approaches as the main content varies
-                    teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
-                    
-                    // Competition/League extraction - usually shorter text with league name
-                    competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
-                    
-                    // Alternative: look for the link text which often contains team names
-                    if (teams.isBlank() || teams.length < 5) {
-                        teams = row.select("a").first()?.text()?.trim() ?: ""
-                    }
-                    
-                    // If teams still looks like league info and competition looks like team names, swap them
-                    if (teams.isNotBlank() && competition.isNotBlank()) {
-                        // Check if what we think are "teams" is actually league/date/time info
-                        val teamsLooksLikeLeague = teams.length < 10 || 
-                                                 teams.contains(Regex("""\([^)]+\)""")) ||  // Contains parentheses with league info
-                                                 teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||  // Contains date pattern like "15 September at"
-                                                 teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
-                        
-                        // Check if what we think is "competition" actually contains team names (longer text, contains team separators, actual team names)
-                        val competitionLooksLikeTeams = competition.length > 15 ||
-                                                       competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||  // Team separators or scores
-                                                       competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2  // Exactly two parts when split by separators
-                        
-                        if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
-                            // Swap them
-                            val temp = teams
-                            teams = competition
-                            competition = temp
-                            Log.d("Scraper", "Swapped teams and competition fields - Teams: '$teams', Competition: '$competition'")
-                        }
-                    }
-                    
-                    // Extract time from the teams/competition text if time is still empty
-                    if (time.isBlank()) {
-                        val combinedText = "$teams $competition"
-                        val timePattern = Regex("""\b(\d{1,2}:\d{2})\b""")
-                        val timeMatch = timePattern.find(combinedText)
-                        if (timeMatch != null) {
-                            time = timeMatch.value
-                        } else {
-                            // Try to extract time from date patterns like "14 September at 15:30"
-                            val dateTimePattern = Regex("""\d{1,2}\s+\w+\s+at\s+(\d{1,2}:\d{2})""")
-                            val dateTimeMatch = dateTimePattern.find(combinedText)
-                            if (dateTimeMatch != null) {
-                                time = dateTimeMatch.groupValues[1]
-                            }
-                        }
-                    }
-                }
-                
-                // If we couldn't find team info in the row, try the link text itself
-                if (teams.isBlank() || teams.length < 5) {
-                    teams = link.text().trim()
-                }
-                
-                // If still no teams, try different approaches
-                if (teams.isBlank() || teams.length < 5) {
-                    // Try to get text from siblings or parent elements
-                    var parent = link.parent()
-                    var attempts = 0
-                    while (parent != null && attempts < 3 && (teams.isBlank() || teams.length < 5)) {
-                        val parentText = parent.ownText().trim()
-                        if (parentText.isNotBlank() && parentText.length > 5) {
-                            teams = parentText
-                            break
-                        }
-                        parent = parent.parent()
-                        attempts++
-                    }
-                }
-                
-                // Clean up teams text - remove time and league info if they got mixed in
-                teams = cleanTeamNames(teams, time, competition)
-                
-                // Extract sport and league information
-                val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
-                
-                Log.d("Scraper", "Raw extraction - Time: '$time', Teams: '$teams', Competition: '$competition'")
-                Log.d("Scraper", "Final match - Teams: '$teams', Time: '$time', Competition: '$competition', Sport: '$sport', League: '$league'")
-                
-                if (teams.isNotBlank() && teams.length > 3) { // Basic validation
-                    matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
-                } else {
-                    Log.w("Scraper", "Skipped match - Teams too short or blank: '$teams' (length: ${teams.length})")
-                }
-            }
-            
-            // Remove duplicates based on URL to avoid LazyColumn key conflicts
-            val uniqueMatches = matches.distinctBy { it.detailPageUrl }
-            
-            // Apply section-specific filtering
-            val filteredMatches = when (section) {
-                ScrapingSection.FOOTBALL -> {
-                    // FIX #27: Use shared FOOTBALL_KEYWORDS constant
-                    val footballMatches = uniqueMatches.filter { match ->
-                        val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                        FOOTBALL_KEYWORDS.any { combinedText.contains(it) } || match.sport.lowercase() == "football"
-                    }
-                    Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
-                    footballMatches
-                }
-                else -> uniqueMatches // No additional filtering for other sections
-            }
-            
-            // Apply pagination if requested
-            val paginatedMatches = if (limit > 0) {
-                val startIndex = offset.coerceAtLeast(0)
-                val endIndex = (startIndex + limit).coerceAtMost(filteredMatches.size)
-                if (startIndex < filteredMatches.size) {
-                    filteredMatches.subList(startIndex, endIndex)
-                } else {
-                    emptyList()
-                }
-            } else {
-                filteredMatches
-            }
-            
-            Log.d("Scraper", "Successfully parsed ${matches.size} matches from main page.")
-            if (matches.size != uniqueMatches.size) {
-                Log.d("Scraper", "Removed ${matches.size - uniqueMatches.size} duplicate matches.")
-            }
-            
-            if (limit > 0) {
-                Log.d("Scraper", "Applied pagination - Offset: $offset, Limit: $limit, Returned: ${paginatedMatches.size} out of ${filteredMatches.size} total matches")
-            }
-            
-            paginatedMatches
+            // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
+            val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, limit, offset)
+            Log.d("Scraper", "Successfully parsed ${result.size} matches from main page.")
+            result
         } catch (e: Exception) {
             Log.e("Scraper", "Error scraping match list", e)
             emptyList()
@@ -326,143 +104,183 @@ class Scraper(private val context: Context) {
      */
     suspend fun scrapeAllMatches(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
         val url = urlPreferences.getBaseUrl()
-        val baseOrigin = baseOriginOf(url) // FIX #12: resolve relative links against configured host
+        val baseOrigin = baseOriginOf(url)
         Log.d("Scraper", "Background scraping ALL matches from: $url (section: ${section.displayName})")
-        
         try {
-            // Use the same logic as scrapeMatchList but without pagination limits
-            val html = fetchHtmlWithOkHttp(url)
-            val doc = Jsoup.parse(html)
-            val matches = mutableListOf<Match>()
-            
-            // Filter document by section if specified
-            val sectionDoc = when (section) {
-                ScrapingSection.ALL -> doc
-                ScrapingSection.TOP_EVENTS_LIVE -> {
-                    val upcomingSection = doc.select("#upcoming").first()
-                    if (upcomingSection != null) {
-                        Log.d("Scraper", "Found 'upcoming' section for background scraping")
-                        upcomingSection
-                    } else {
-                        Log.d("Scraper", "No 'upcoming' section found for background scraping, using full document")
-                        doc
-                    }
-                }
-                ScrapingSection.FOOTBALL -> {
-                    val allExceptUpcoming = doc.clone()
-                    allExceptUpcoming.select("#upcoming").remove()
-                    Log.d("Scraper", "Background scraping football section (excluding #upcoming)")
-                    allExceptUpcoming
-                }
-            }
-
-            // Find all match links (same logic as scrapeMatchList)
-            var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='/event/']")
-            }
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='event']")
-            }
-            
-            Log.d("Scraper", "Background scraping found ${detailLinks.size} match links")
-
-            // Process all links without pagination
-            for (link in detailLinks) {
-                val href = link.attr("href")
-                if (href.isBlank()) continue
-                
-                val detailPageUrl = if (href.startsWith("http")) {
-                    href
-                } else if (href.startsWith("/")) {
-                    "$baseOrigin$href"
-                } else {
-                    "$baseOrigin/$href"
-                }
-                
-                // Extract match information (same logic as scrapeMatchList but simplified for performance)
-                var row = link.closest("tr")
-                if (row == null) row = link.parent()
-                if (row == null) row = link
-                
-                var time = ""
-                var teams = ""
-                var competition = ""
-                
-                if (row != null) {
-                    time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
-                    teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
-                    competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
-                    
-                    // Use link text as fallback for teams
-                    if (teams.isBlank() || teams.length < 5) {
-                        teams = row.select("a").first()?.text()?.trim() ?: ""
-                    }
-                    
-                    // Swap teams and competition if needed (same logic as main scraper)
-                    if (teams.isNotBlank() && competition.isNotBlank()) {
-                        val teamsLooksLikeLeague = teams.length < 10 || 
-                                                 teams.contains(Regex("""\([^)]+\)""")) ||
-                                                 teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||
-                                                 teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
-                        
-                        val competitionLooksLikeTeams = competition.length > 15 ||
-                                                       competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||
-                                                       competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2
-                        
-                        if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
-                            val temp = teams
-                            teams = competition
-                            competition = temp
-                        }
-                    }
-                    
-                    // Extract time from text if needed
-                    if (time.isBlank()) {
-                        val combinedText = "$teams $competition"
-                        val timePattern = Regex("""\b(\d{1,2}:\d{2})\b""")
-                        val timeMatch = timePattern.find(combinedText)
-                        if (timeMatch != null) {
-                            time = timeMatch.value
-                        }
-                    }
-                }
-                
-                // Use link text as final fallback
-                if (teams.isBlank()) {
-                    teams = link.text().trim()
-                }
-                
-                // Clean and extract sport/league info
-                teams = cleanTeamNames(teams, time, competition)
-                val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
-                
-                // Add match if valid (basic validation)
-                if (teams.isNotBlank() && teams.length > 3) {
-                    matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
-                }
-            }
-            
-            // Remove duplicates and apply section filtering
-            val uniqueMatches = matches.distinctBy { it.detailPageUrl }
-            
-            val filteredMatches = when (section) {
-                ScrapingSection.FOOTBALL -> {
-                    // FIX #27: Use shared FOOTBALL_KEYWORDS constant
-                    uniqueMatches.filter { match ->
-                        val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                        FOOTBALL_KEYWORDS.any { combinedText.contains(it) } || match.sport.lowercase() == "football"
-                    }
-                }
-                else -> uniqueMatches
-            }
-            
-            Log.d("Scraper", "Background scraping completed: ${filteredMatches.size} matches found (${matches.size} total, ${uniqueMatches.size} unique)")
-            filteredMatches
-            
+            // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
+            val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, 0, 0)
+            Log.d("Scraper", "Background scraping completed: ${result.size} matches found")
+            result
         } catch (e: Exception) {
             Log.e("Scraper", "Error in background scraping", e)
             emptyList()
+        }
+    }
+
+    /**
+     * FIX #20: Selects the relevant sub-document for a given [ScrapingSection].
+     * Previously this identical `when` block was inlined — and duplicated — in both
+     * [scrapeMatchList] and [scrapeAllMatches].
+     */
+    private fun sectionDocFor(
+        doc: org.jsoup.nodes.Document,
+        section: ScrapingSection
+    ): org.jsoup.nodes.Element = when (section) {
+        ScrapingSection.ALL -> doc
+        ScrapingSection.TOP_EVENTS_LIVE -> {
+            val upcoming = doc.select("#upcoming").first()
+            if (upcoming != null) {
+                Log.d("Scraper", "Found 'upcoming' section with ${upcoming.select("a").size} links")
+                upcoming
+            } else {
+                Log.d("Scraper", "No 'upcoming' section found, falling back to full document")
+                doc
+            }
+        }
+        ScrapingSection.FOOTBALL -> {
+            val copy = doc.clone()
+            copy.select("#upcoming").remove()
+            Log.d("Scraper", "Using document minus #upcoming for Football section")
+            copy
+        }
+    }
+
+    /**
+     * FIX #20: Single implementation of match-row parsing shared by [scrapeMatchList]
+     * (paginated, limit > 0) and [scrapeAllMatches] (limit = 0, no pagination).
+     *
+     * Handles: link-selector cascade, per-row field extraction, time fallback,
+     * team/competition swap heuristic, parent-traversal fallback, dedup,
+     * FOOTBALL section filtering, and optional pagination.
+     */
+    private fun parseMatchRows(
+        sectionDoc: org.jsoup.nodes.Element,
+        section: ScrapingSection,
+        baseOrigin: String,
+        limit: Int = 0,
+        offset: Int = 0
+    ): List<Match> {
+        // ── Link discovery ────────────────────────────────────────────────────
+        var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
+        Log.d("Scraper", "Found ${detailLinks.size} links with '/enx/event/' pattern in ${section.displayName} section")
+        if (detailLinks.isEmpty()) {
+            detailLinks = sectionDoc.select("a[href*='/event/']")
+            Log.d("Scraper", "Found ${detailLinks.size} links with '/event/' pattern")
+        }
+        if (detailLinks.isEmpty()) {
+            detailLinks = sectionDoc.select("a[href*='event']")
+            Log.d("Scraper", "Found ${detailLinks.size} links containing 'event'")
+        }
+        if (BuildConfig.DEBUG) {
+            val allLinks = sectionDoc.select("a[href]")
+            Log.d("Scraper", "Total links found in section: ${allLinks.size}")
+            if (allLinks.isNotEmpty() && detailLinks.isEmpty()) {
+                Log.d("Scraper", "Sample of first 10 links found:")
+                allLinks.take(10).forEach { Log.d("Scraper", "Link: ${it.attr("href")} - Text: ${it.text().take(50)}") }
+            }
+            if (detailLinks.isEmpty()) {
+                Log.d("Scraper", "Found ${sectionDoc.select("table").size} tables in section")
+                Log.d("Scraper", "Section text (first 500 chars): ${sectionDoc.text().take(500)}")
+            }
+        }
+
+        // ── Per-link processing ───────────────────────────────────────────────
+        val matches = mutableListOf<Match>()
+        for (link in detailLinks) {
+            val href = link.attr("href")
+            if (href.isBlank()) continue
+
+            val detailPageUrl = when {
+                href.startsWith("http") -> href
+                href.startsWith("/")    -> "$baseOrigin$href"
+                else                    -> "$baseOrigin/$href"
+            }
+
+            val row: org.jsoup.nodes.Element = link.closest("tr") ?: link.parent() ?: link
+
+            var time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
+            var teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
+            var competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
+
+            if (teams.isBlank() || teams.length < 5) {
+                teams = row.select("a").first()?.text()?.trim() ?: ""
+            }
+
+            // Heuristic: swap teams/competition if their content looks reversed.
+            if (teams.isNotBlank() && competition.isNotBlank()) {
+                val teamsLooksLikeLeague = teams.length < 10 ||
+                    teams.contains(Regex("""\([^)]+\)""")) ||
+                    teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||
+                    teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
+                val competitionLooksLikeTeams = competition.length > 15 ||
+                    competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||
+                    competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2
+                if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
+                    val tmp = teams; teams = competition; competition = tmp
+                    Log.d("Scraper", "Swapped teams/competition — Teams: '$teams', Competition: '$competition'")
+                }
+            }
+
+            // Time fallback: extract from combined text
+            if (time.isBlank()) {
+                val ct = "$teams $competition"
+                time = Regex("""\b(\d{1,2}:\d{2})\b""").find(ct)?.value
+                    ?: Regex("""\d{1,2}\s+\w+\s+at\s+(\d{1,2}:\d{2})""").find(ct)?.groupValues?.getOrNull(1)
+                    ?: ""
+            }
+
+            // Team-name fallbacks
+            if (teams.isBlank() || teams.length < 5) teams = link.text().trim()
+            if (teams.isBlank() || teams.length < 5) {
+                var parent = link.parent(); var attempts = 0
+                while (parent != null && attempts < 3 && (teams.isBlank() || teams.length < 5)) {
+                    val t = parent.ownText().trim()
+                    if (t.isNotBlank() && t.length > 5) { teams = t; break }
+                    parent = parent.parent(); attempts++
+                }
+            }
+
+            teams = cleanTeamNames(teams, time, competition)
+            val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
+
+            Log.d("Scraper", "Raw: Time='$time' Teams='$teams' Competition='$competition'")
+            Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league'")
+
+            if (teams.isNotBlank() && teams.length > 3) {
+                matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
+            } else {
+                Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
+            }
+        }
+
+        // ── Dedup ─────────────────────────────────────────────────────────────
+        val uniqueMatches = matches.distinctBy { it.detailPageUrl }
+        if (matches.size != uniqueMatches.size) {
+            Log.d("Scraper", "Removed ${matches.size - uniqueMatches.size} duplicate matches.")
+        }
+
+        // ── Section filtering ─────────────────────────────────────────────────
+        val filteredMatches = when (section) {
+            ScrapingSection.FOOTBALL -> {
+                val footballMatches = uniqueMatches.filter { match ->
+                    val ct = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
+                    FOOTBALL_KEYWORDS.any { ct.contains(it) } || match.sport.lowercase() == "football"
+                }
+                Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
+                footballMatches
+            }
+            else -> uniqueMatches
+        }
+
+        // ── Pagination (limit = 0 means no limit) ─────────────────────────────
+        return if (limit > 0) {
+            val start = offset.coerceAtLeast(0)
+            val end = (start + limit).coerceAtMost(filteredMatches.size)
+            Log.d("Scraper", "Pagination — offset=$offset limit=$limit returned=${end - start} of ${filteredMatches.size}")
+            if (start < filteredMatches.size) filteredMatches.subList(start, end) else emptyList()
+        } else {
+            filteredMatches
         }
     }
 

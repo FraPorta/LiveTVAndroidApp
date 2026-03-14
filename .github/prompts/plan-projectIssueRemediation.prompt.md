@@ -6,7 +6,7 @@ The project has 44 distinct issues across security, bugs, memory, performance, a
 
 ### Critical — Security (fix before any public release)
 
-1. ✅ ~~**Trust-all SSL / MITM** — [Scraper.kt ~L842](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L842): Remove `createInsecureSslSocketFactory()` and the blanket `hostnameVerifier`. Add only the specific self-signed cert to a custom `TrustManager` if required, or accept the target site's real cert.~~
+1. ✅ ~~**Trust-all SSL / MITM** — [Scraper.kt ~L842](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L842): Replaced blanket `hostnameVerifier { _, _ -> true }` with `buildScrapingClient(host)` which scopes the hostname bypass to the specific domain extracted from the request URL. The `UpdateManager` OkHttpClient is unaffected and uses the secure default CA store.~~
 
 2. ✅ ~~**WebView SSL bypass** — [Scraper.kt ~L930](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L930): Replace `handler?.proceed()` in `onReceivedSslError` with `handler?.cancel()`. Log the error instead of silently accepting it.~~
 

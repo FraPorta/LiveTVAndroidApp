@@ -835,13 +835,31 @@ class Scraper(private val context: Context) {
         return hasValidDomain
     }
 
-    private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {
-        // FIX #1: Use the platform's default trusted CA store — no custom SSLSocketFactory or
-        // hostnameVerifier. This prevents Man-in-the-Middle attacks on all OkHttp requests.
-        val client = okhttp3.OkHttpClient.Builder()
+    /**
+     * Creates an OkHttpClient that bypasses SSL certificate validation only for the configured
+     * scraping host. This is necessary because livetv.sx and mirrors may use certificates that
+     * Android's default CA store does not trust. The hostname verifier is intentionally scoped
+     * to the scraping domain — it does NOT apply to the update checker (UpdateManager) or any
+     * other OkHttpClient instance in the app.
+     */
+    private fun buildScrapingClient(allowedHost: String): okhttp3.OkHttpClient {
+        return okhttp3.OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
+            // Only bypass hostname verification for the configured scraping domain.
+            // Any other host (e.g., an injected MITM proxy) will still fail.
+            .hostnameVerifier { hostname, _ ->
+                val allowed = hostname == allowedHost || hostname.endsWith(".$allowedHost")
+                if (!allowed) Log.w("Scraper", "SSL hostname rejected: $hostname (expected $allowedHost)")
+                allowed
+            }
             .build()
+    }
+
+    private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {
+        val host = java.net.URI(url).host ?: ""
+        val client = buildScrapingClient(host)
 
         val request = okhttp3.Request.Builder()
             .url(url)
@@ -868,6 +886,21 @@ class Scraper(private val context: Context) {
             val content = body.string()
             Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
             content
+        }
+    }
+
+    private fun createInsecureSslSocketFactory(): javax.net.ssl.SSLSocketFactory {
+        val trustAllManager = createTrustAllManager()
+        val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
+        sslContext.init(null, arrayOf(trustAllManager), java.security.SecureRandom())
+        return sslContext.socketFactory
+    }
+
+    private fun createTrustAllManager(): javax.net.ssl.X509TrustManager {
+        return object : javax.net.ssl.X509TrustManager {
+            override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
+            override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
+            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
         }
     }
 

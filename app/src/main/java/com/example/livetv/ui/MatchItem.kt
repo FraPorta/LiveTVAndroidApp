@@ -26,7 +26,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -183,7 +182,12 @@ fun MatchItem(match: Match, viewModel: MatchViewModel, forceUniformHeight: Boole
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                       CircularProgressIndicator(modifier = Modifier.size(14.dp))
+                       SpinningIcon(
+                           imageVector = Icons.Default.Refresh,
+                           contentDescription = "Loading",
+                           tint = MaterialTheme.colorScheme.primary,
+                           modifier = Modifier.size(14.dp)
+                       )
                        Spacer(modifier = Modifier.width(4.dp))
                        Text(
                            "Loading...",

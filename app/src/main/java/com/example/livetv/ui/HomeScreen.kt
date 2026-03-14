@@ -1,5 +1,10 @@
 package com.example.livetv.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +31,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -189,7 +195,12 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    CircularProgressIndicator()
+                                    SpinningIcon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Loading",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(40.dp)
+                                    )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(text = "Fetching match list...")
                                 }
@@ -328,6 +339,17 @@ fun ActionButtons(
     showRefreshButton: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val isSpinning = isBackgroundScraping || isRefreshing
+    val infiniteTransition = rememberInfiniteTransition(label = "actionSpin")
+    val spinRotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing)
+        ),
+        label = "spinRotation"
+    )
+
     Box(
         modifier = modifier
             .background(
@@ -348,10 +370,13 @@ fun ActionButtons(
                 focusColor = MaterialTheme.colorScheme.primary
             ) {
                 if (isBackgroundScraping) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onTertiary
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Loading",
+                        tint = MaterialTheme.colorScheme.onTertiary,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .graphicsLayer { rotationZ = spinRotation }
                     )
                 } else {
                     Icon(
@@ -373,20 +398,18 @@ fun ActionButtons(
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     focusColor = MaterialTheme.colorScheme.tertiary
                 ) {
-                    if (isRefreshing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh matches",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = if (isRefreshing) "Refreshing" else "Refresh matches",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = if (isRefreshing) {
+                            Modifier
+                                .size(20.dp)
+                                .graphicsLayer { rotationZ = spinRotation }
+                        } else {
+                            Modifier.size(20.dp)
+                        }
+                    )
                 }
                 
                 Spacer(modifier = Modifier.width(8.dp))

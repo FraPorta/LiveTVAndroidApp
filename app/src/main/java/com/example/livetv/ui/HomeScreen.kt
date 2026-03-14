@@ -182,11 +182,8 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         SearchBar(viewModel = viewModel)
                     }
                     
-                    // Content area - changes based on state with pull-to-refresh
-                    SwipeRefresh(
-                        state = swipeRefreshState,
-                        onRefresh = { viewModel.refreshCurrentSection() }
-                    ) {
+                    // Content area - pull-to-refresh only on phone; TV uses the Refresh button
+                    val contentArea: @Composable () -> Unit = {
                         when {
                             isLoading -> {
                                 // Loading state - only covers content area
@@ -315,6 +312,15 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 }
                             }
                         }
+                    }
+                    if (isCompactScreen) {
+                        SwipeRefresh(
+                            state = swipeRefreshState,
+                            onRefresh = { viewModel.refreshCurrentSection() },
+                            content = contentArea
+                        )
+                    } else {
+                        contentArea()
                     }
         }
     }

@@ -1,0 +1,129 @@
+## Plan: Project-Wide Issue Remediation
+
+The project has 44 distinct issues across security, bugs, memory, performance, and maintainability. The plan below addresses them in priority order. Critical security issues should be fixed before any release; the rest can be tackled incrementally.
+
+---
+
+### Critical — Security (fix before any public release)
+
+1. ✅ ~~**Trust-all SSL / MITM** — [Scraper.kt ~L842](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L842): Replaced blanket `hostnameVerifier { _, _ -> true }` with `buildScrapingClient(host)` which scopes the hostname bypass to the specific domain extracted from the request URL. The `UpdateManager` OkHttpClient is unaffected and uses the secure default CA store.~~
+
+2. ✅ ~~**WebView SSL bypass** — [Scraper.kt ~L930](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L930): Replace `handler?.proceed()` in `onReceivedSslError` with `handler?.cancel()`. Log the error instead of silently accepting it.~~
+
+3. ✅ ~~**Signature verification empty-list bypass** — [UpdateManager.kt ~L225](app/src/main/java/com/example/livetv/data/updater/UpdateManager.kt#L225): Change the guard to `if (current.isEmpty() || downloaded.isEmpty()) return false` so an empty signature list is treated as a mismatch, not a pass.~~
+
+4. ✅ ~~**Dangerous WebView flags** — [Scraper.kt ~L924](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L924): Remove `allowUniversalAccessFromFileURLs = true` and set `mixedContentMode = MIXED_CONTENT_NEVER_ALLOW`.~~ `allowUniversalAccessFromFileURLs` removed; `MIXED_CONTENT_ALWAYS_ALLOW` kept intentionally for stream scraping compatibility (revisit later).
+
+5. ✅ ~~**CI secrets written as cleartext** — [build-and-release.yml ~L89](app/.github/workflows/build-and-release.yml#L89): Add `echo "::add-mask::${{ secrets.RELEASE_STORE_PASSWORD }}"` (and equivalent for each secret) before writing them to `gradle.properties`.~~
+
+---
+
+### High — Bugs
+
+6. ✅ ~~**`loadMoreMatches()` race condition** — Extracted core logic into `loadMoreMatchesInternal()`; the public `loadMoreMatches()` now guards with `isLoadingMore` state and sets it in a `try/finally`. The recursive page-fetch call invokes `loadMoreMatchesInternal()` directly to bypass the guard correctly.~~
+
+7. ✅ ~~**Non-thread-safe ViewModel fields** — All mutations occur within `viewModelScope.launch` (Dispatchers.Main), so mutations are sequentially safe. Noted with a comment; full architectural fix is tracked under item 23 (eliminate duplicate SectionData state).~~
+
+8. ✅ ~~**`var` fields on `data class Match`** — Changed `streamLinks` and `areLinksLoading` to `val`. All existing mutation sites already used `.copy()`.~~
+
+9. ✅ ~~**Download stream leak** — Wrapped `FileOutputStream` and `InputStream` inside nested `use {}` blocks in `downloadUpdate()`. Both streams are now guaranteed to close on exception.~~
+
+10. ✅ ~~**Double search filter** — Removed the redundant `.filter { searchQuery... }` block in `refreshVisibleMatches()`; `getFilteredMatches()` already applies the search, sport, and league filters.~~
+
+11. ✅ ~~**`release-on-tag.yml` builds unsigned APK** — Deleted the file entirely via `git rm`. The `build-and-release.yml` workflow already handles signed releases on every push to master; the tag-triggered workflow was redundant and dangerous.~~
+
+12. ✅ ~~**Relative URLs always resolve to `livetv.sx`** — Added `baseOriginOf(url)` private helper to `Scraper`; both `scrapeMatchList` and `scrapeAllMatches` now derive the origin from the configured base URL and use it when resolving relative `/enx/event/...` links.~~
+
+---
+
+### High — Memory Leaks
+
+13. ✅ ~~**`GlobalScope.launch` for WebView** — [Scraper.kt ~L904](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L904): Replaced `GlobalScope.launch(Dispatchers.Main)` with `withContext(Dispatchers.Main)`, so the WebView coroutine inherits the calling scope (which flows from `viewModelScope`) instead of leaking into `GlobalScope`. Removed the unused `import kotlinx.coroutines.launch`.~~
+
+14. ✅ ~~**Unreliable WebView cleanup** — [Scraper.kt ~L966](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L966): Consolidated WebView destruction into a single `try/finally` block wrapping `suspendCancellableCoroutine`. Removed `webView.destroy()` from the `WebAppInterface` callback and `view?.destroy()` from `onReceivedError`; removed the `invokeOnCancellation` lambda that re-launched a `GlobalScope` coroutine. `finally` now handles all cases: normal completion, exceptions, and cancellation.~~
+
+---
+
+### High — Performance
+
+15. ✅ ~~**New `OkHttpClient` per request** — [Scraper.kt ~L836](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L836): Deleted `buildScrapingClient(host)`. Added a `scrapingClient: OkHttpClient` lazy class-level property built once in `init`. Its hostname verifier closes over `urlPreferences` and reads `getBaseUrl()` dynamically at verification time, so it stays correct when the user changes the URL at runtime. All `fetchHtmlWithOkHttp` calls now reuse this single client.~~
+
+16. ✅ ~~**Same URL fetched twice on load** — [MatchViewModel.kt ~L111](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L111): Added a short-lived HTML cache (`HtmlCacheEntry`, TTL 60 s) in `Scraper`. `fetchHtmlWithOkHttp` writes to it on every successful fetch and returns the cached copy on cache-hits. Because `startBackgroundScraping()` calls `scrapeAllMatches()` (which calls `fetchHtmlWithOkHttp`) seconds after `loadInitialMatchList()` has already fetched the same URL, the second call resolves from cache with zero network overhead.~~
+
+---
+
+### Medium — Code Quality & Performance
+
+17. ✅ ~~**Regex compiled inside loop** — [Scraper.kt ~L654](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L654): Moved `urlRegex` into a `companion object val JS_URL_REGEX` (added alongside `FOOTBALL_KEYWORDS`). The `scriptTags.forEach` loop now references `JS_URL_REGEX` directly.~~
+
+18. ✅ ~~**Excessive diagnostic logging in release** — [Scraper.kt ~L88](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L88): Wrapped the O(n) per-URL logging block (`Found N URLs before filtering`, per-URL `URL: …` lines, `FILTERED OUT`, `Stream types found`) in `if (BuildConfig.DEBUG)` guards. Added `buildConfig = true` to `buildFeatures` so `BuildConfig` is generated in AGP 8+.~~
+
+19. ✅ ~~**Index-based `key` in `LazyVerticalGrid`** — [HomeScreen.kt ~L259](app/src/main/java/com/example/livetv/ui/HomeScreen.kt#L259): Changed `key = { index, _ -> "match_$index" }` to `key = { _, match -> match.detailPageUrl }`. This gives Compose a stable, identity-correct key so it can correctly diff recompositions when list items shift positions.~~
+
+20. ✅ ~~**`scrapeMatchList` / `scrapeAllMatches` duplication** — [Scraper.kt ~L302](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L302): Extracted two new private helpers. `sectionDocFor(doc, section)` centralises the three-way `when` block that was copy-pasted in both functions. `parseMatchRows(sectionDoc, section, baseOrigin, limit, offset)` is the single implementation of link discovery → row parsing → time fallback → swap heuristic → parent-traversal fallback → dedup → FOOTBALL filter → pagination. Both public functions now delegate to it in ~5 lines each — down from ~100 lines each.~~
+
+21. ✅ ~~**Empty `ScrapeSection.kt` / misplaced enum** — [ScrapeSection.kt](app/src/main/java/com/example/livetv/data/model/ScrapeSection.kt): Moved `ScrapingSection` enum from `Scraper.kt` (package `data.network`) into `ScrapeSection.kt` (package `data.model`) where it belongs as a domain type. Updated imports in `Scraper.kt`, `MatchViewModel.kt`, `HomeScreen.kt`, and `MatchRepository.kt`.~~
+
+22. ✅ ~~**1391-line `HomeScreen.kt`** — [HomeScreen.kt](app/src/main/java/com/example/livetv/ui/HomeScreen.kt): Split into composable files: `FocusableButton.kt`, `MatchItem.kt`, `SectionSelector.kt` (also fixes #36 `.values()` → `.entries`), `SearchBar.kt`, `SettingsDialog.kt`. HomeScreen.kt reduced from 1386 → 412 lines (imports trimmed to only what HomeScreen + ActionButtons need).~~
+
+23. ✅ ~~**Duplicate `SectionData` + top-level vars in ViewModel** — [MatchViewModel.kt ~L20](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L20): Replaced the 4 top-level `private var` fields (`allMatches`, `hasLoadedAllMatches`, `totalFetchedMatches`, `currentVisibleCount`) with computed properties backed by `sectionCache` via a `currentSectionData()` helper. All read/write sites are unchanged syntactically. Deleted `saveCurrentSectionData()` (writes now go directly to cache via setters), deleted `updateCurrentSectionCache()` and all 6 call sites, and slimmed `restoreSectionData()` to only restore the observable `mutableStateOf` filter values from cache. `updateFilterOptionsFromCurrentMatches()`, `setSportFilter()`, and `setLeagueFilter()` each write their respective fields directly to the current section's `SectionData`.~~
+
+24. **`loadMoreMatches()` bypasses search filter** — [MatchViewModel.kt ~L312](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L312): `loadMoreMatchesInternal()` already calls `getFilteredMatches()` (which includes the search filter), but `hasActiveFilters()` only checks sport/league — not the search query — so the early-exit path when search is active does not show all results at once (unlike `refreshVisibleMatches()`). The "Load More" button is intentionally hidden during search so the impact is cosmetic; full fix deferred.
+
+25. **`com.example` package** — [app/build.gradle.kts](app/build.gradle.kts#L12): Rename to a real reverse-domain namespace (e.g., `com.fporta.livetv`). This requires a manifest rename and file structure refactor — worth doing before any Play Store submission. *(Breaking change — deferred.)*
+
+26. ✅ ~~**`isMinifyEnabled = false`** — [app/build.gradle.kts](app/build.gradle.kts#L67): Set `isMinifyEnabled = true` for release. Created `proguard-rules.pro` with keeps for: `@JavascriptInterface` bridge methods, OkHttp, Jsoup, Kotlinx-Serialization, Kotlin Coroutines, data model classes, `FileProvider`, and `-assumenosideeffects` rules to strip `Log.v`/`Log.d` in release.~~
+
+27. ✅ ~~**Hardcoded football keyword list duplicated** — [Scraper.kt ~L243](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L243): Extracted to `companion object val FOOTBALL_KEYWORDS: Set<String>`. Both `scrapeMatchList` and `scrapeAllMatches` now use `FOOTBALL_KEYWORDS.any { combinedText.contains(it) }` instead of the duplicated 12-item `||` chain.~~
+
+28. ✅ ~~**`"f1"` false-positive substring match** — [Scraper.kt ~L471](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L471): Replaced `combinedText.contains("f1")` with `combinedText.contains(Regex("""\bf1\b""", RegexOption.IGNORE_CASE))`. Word-boundary anchors prevent "f1" from matching inside strings like `"div1"`, `"nfl1"`, URLs, etc.~~
+
+29. ✅ ~~**Activity `Context` in `UpdateViewModel`** — [UpdateViewModel.kt ~L16](app/src/main/java/com/example/livetv/ui/updater/UpdateViewModel.kt#L16): Converted to `AndroidViewModel(application)`; `UpdateManager` now receives `application.applicationContext`. Deleted `UpdateViewModelFactory` (no longer needed — the default Jetpack factory auto-provides Application). Updated `HomeScreen.kt` and `UpdateDialog.kt` to use `viewModel()` with no custom factory.~~
+
+30. **Deprecated `accompanist-swiperefresh`** — [app/build.gradle.kts](app/build.gradle.kts#L112): Replace with Material3's `PullToRefreshBox` (available from `compose-bom 2024.x` onward, which requires the dependency update in step 32). *(Blocked on issue 32 dependency bump — deferred.)*
+
+---
+
+### Medium — Config & Manifest
+
+31. ✅ ~~**`targetSdk 33`** — [app/build.gradle.kts](app/build.gradle.kts#L15): Bumped `compileSdk` to `36` and `targetSdk` to `34`. Bumped `minSdk` from `21` → `23` (API 21–22 = Android 5.0/5.1, required by `tv-foundation:1.0.0-beta01` and effectively zero market share in 2026). Also bumped Kotlin from `1.9.0` → `1.9.25` (root + serialization plugin) and `kotlinCompilerExtensionVersion` from `1.5.1` → `1.5.15` to match.~~
+
+32. ✅ ~~**All dependencies 2–3 years outdated** — [app/build.gradle.kts](app/build.gradle.kts#L91): Updated: `compose-bom` → `2024.09.03`, `core-ktx` → `1.13.1`, `appcompat` → `1.7.0`, `material` → `1.12.0`, `lifecycle-*` → `2.8.7`, `activity-compose` → `1.9.3`, `okhttp`+`logging-interceptor` → `4.12.0`, `kotlinx-coroutines-*` → `1.9.0`, `kotlinx-serialization-json` → `1.7.3`, `jsoup` → `1.18.1`, `material-icons-*` → `1.7.3`, `tv-foundation` → `1.0.0-beta01` (no stable release exists), `tv-material` → `1.0.1` (stable). Both `compose-bom` entries (main + androidTest) updated. `accompanist-swiperefresh` bumped to `0.36.0` pending replacement (#30).~~
+
+33. ✅ ~~**`network_security_config.xml` too narrow** — [network_security_config.xml](app/src/main/res/xml/network_security_config.xml): Added `127.0.0.1` (Acestream HTTP proxy) and `localhost` as cleartext-permitted domains alongside `livetv.sx`.~~
+
+34. ✅ ~~**Unused manifest permissions** — [AndroidManifest.xml](app/src/main/AndroidManifest.xml#L12): Removed `READ_MEDIA_VIDEO` and `READ_MEDIA_AUDIO`; app never accesses local media — streams are opened via `Intent` to an external player.~~
+
+35. ✅ ~~**`android:largeHeap="true"`** — [AndroidManifest.xml](app/src/main/AndroidManifest.xml#L33): Flag retained with an explanatory XML comment. WebView scraping + Jsoup DOM parsing hold multi-MB HTML/DOM trees concurrently and triggered OOM without it. Revisit once WebView scraping is replaced with an OkHttp-only flow.~~
+
+---
+
+### Low
+
+36. **`.values()` → `.entries`** — Two call sites in [HomeScreen.kt ~L717](app/src/main/java/com/example/livetv/ui/HomeScreen.kt#L717) and [~L806](app/src/main/java/com/example/livetv/ui/HomeScreen.kt#L806).
+37. **`data object` for sealed states** — [UpdateViewModel.kt ~L87](app/src/main/java/com/example/livetv/ui/updater/UpdateViewModel.kt#L87).
+38. **Consistent log tags** — Define a `TAG` constant per file, named after the class.
+39. **Remove debug APK from releases** — [build-and-release.yml ~L195](app/.github/workflows/build-and-release.yml#L195): Remove the `assembleDebug` step or exclude its output from the release asset upload.
+40. **Package-level constants** — [MatchViewModel.kt ~L13](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L13): Move to `companion object` inside the class.
+
+---
+
+### Missing Test Coverage
+
+41. **Unit tests**: Add tests for `Scraper.cleanTeamNames()`, `extractSportAndLeague()`, `isValidStreamUrl()`, `UpdateManager.isNewerVersion()`, and `signaturesMatch()`.
+42. **ViewModel tests**: Test section switching, search filter, load-more pagination, and cache restore logic.
+
+---
+
+**Verification**
+
+- `./gradlew assembleRelease` — should succeed with minification enabled and proper keystore.
+- Manual D-pad navigation smoke test on an emulator with Android TV profile.
+- HTTP proxy (e.g. mitmproxy) to confirm SSL is no longer bypassed.
+- Logcat filter on `"livetv"` tag to confirm no PII/secrets in release logs.
+
+**Decisions**
+
+- Relative URL fix (issue 12) is purely internal — no user-visible behaviour change.
+- Package rename (issue 25) is a breaking change for existing installs; plan a migration notice if users are already using the app.
+- `release-on-tag.yml` appears redundant with `build-and-release.yml`; recommend deleting it unless it serves a distinct purpose.

@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -23,9 +22,8 @@ import kotlin.math.roundToInt
 @Composable
 fun UpdateDialog(
     onDismiss: () -> Unit,
-    updateViewModel: UpdateViewModel = viewModel(
-        factory = UpdateViewModelFactory(LocalContext.current)
-    )
+    // FIX #29: Default factory works automatically for AndroidViewModel subclasses.
+    updateViewModel: UpdateViewModel = viewModel()
 ) {
     val updateState = updateViewModel.updateState
     val downloadProgress = updateViewModel.downloadProgress

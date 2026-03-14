@@ -3,7 +3,7 @@ package com.example.livetv.data.repository
 import android.content.Context
 import com.example.livetv.data.model.Match
 import com.example.livetv.data.network.Scraper
-import com.example.livetv.data.network.ScrapingSection
+import com.example.livetv.data.model.ScrapingSection
 
 class MatchRepository(context: Context) {
     private val scraper = Scraper(context.applicationContext)

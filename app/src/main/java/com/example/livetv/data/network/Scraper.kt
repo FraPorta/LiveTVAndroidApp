@@ -16,23 +16,59 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.launch
 import org.jsoup.Jsoup
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.example.livetv.data.preferences.UrlPreferences
-
-enum class ScrapingSection(val displayName: String, val selector: String) {
-    FOOTBALL("Football", ":not(#upcoming)"),
-    TOP_EVENTS_LIVE("Top Live", "#upcoming"),
-    ALL("All", "")
-}
+import com.example.livetv.data.model.ScrapingSection
+import com.example.livetv.BuildConfig
 
 class Scraper(private val context: Context) {
 
     private val urlPreferences = UrlPreferences(context)
+
+    // FIX #15: A single OkHttpClient is reused for all scraping calls so the connection pool,
+    // thread pool, and SSL session cache are shared. The hostname verifier reads the configured
+    // base URL at verification time, so it stays correct when the user changes the URL at runtime.
+    private val scrapingClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
+            .hostnameVerifier { hostname, _ ->
+                val allowedHost = try {
+                    java.net.URI(urlPreferences.getBaseUrl()).host ?: ""
+                } catch (_: Exception) { "" }
+                val allowed = allowedHost.isNotEmpty() &&
+                    (hostname == allowedHost || hostname.endsWith(".$allowedHost"))
+                if (!allowed) Log.w("Scraper", "SSL hostname rejected: $hostname (expected $allowedHost)")
+                allowed
+            }
+            .build()
+    }
+
+    // FIX #16: Cache the last successfully fetched HTML so that scrapeAllMatches() (called
+    // immediately after scrapeMatchList() during initial load) can reuse the same HTML without
+    // making a second HTTP request to an identical URL.
+    private data class HtmlCacheEntry(val url: String, val html: String, val fetchedAt: Long)
+    @Volatile private var htmlCache: HtmlCacheEntry? = null
+    private val HTML_CACHE_TTL_MS = 60_000L // 60 seconds
+
+    companion object {
+        // FIX #17: Pre-compiled regex, reused across all JS-scanning calls in fetchStreamLinks
+        // instead of being rebuilt on every iteration of the scriptTags forEach loop.
+        private val JS_URL_REGEX = """https?://[^\s"'<>]+(?:\.m3u8|stream|live|watch|player)""".toRegex(RegexOption.IGNORE_CASE)
+
+        // FIX #27: Single source of truth for football-related keywords.
+        // Previously hard-coded twice (in scrapeMatchList and scrapeAllMatches), now referenced
+        // from both call sites so a future keyword addition only needs one change.
+        val FOOTBALL_KEYWORDS: Set<String> = setOf(
+            "football", "soccer", "premier", "liga", "bundesliga", "serie a",
+            "ligue", "champions league", "europa league", "uefa", "fifa", "world cup"
+        )
+    }
 
     /**
      * Scrapes the main page to get a list of upcoming matches, but doesn't
@@ -47,247 +83,14 @@ class Scraper(private val context: Context) {
         offset: Int = 0
     ): List<Match> = withContext(Dispatchers.IO) {
         val url = urlPreferences.getBaseUrl()
-        Log.d("Scraper", "Fetching initial match list from: $url")
-        
+        val baseOrigin = baseOriginOf(url)
+        Log.d("Scraper", "Fetching initial match list from: $url (section: ${section.displayName})")
         try {
-            // Use the configured URL from preferences
-            val html = fetchHtmlWithOkHttp(url)
-            
-            val doc = Jsoup.parse(html)
-            val matches = mutableListOf<Match>()
-            
-            Log.d("Scraper", "Scraping section: ${section.displayName}")
-
-            // Filter document by section if specified
-            val sectionDoc = when (section) {
-                ScrapingSection.ALL -> doc
-                ScrapingSection.TOP_EVENTS_LIVE -> {
-                    val upcomingSection = doc.select("#upcoming").first()
-                    if (upcomingSection != null) {
-                        Log.d("Scraper", "Found 'upcoming' section with ${upcomingSection.select("a").size} links")
-                        upcomingSection
-                    } else {
-                        Log.d("Scraper", "No 'upcoming' section found, falling back to full document")
-                        doc
-                    }
-                }
-                ScrapingSection.FOOTBALL -> {
-                    val allExceptUpcoming = doc.clone()
-                    allExceptUpcoming.select("#upcoming").remove()
-                    Log.d("Scraper", "No specific football section found, using document without #upcoming section")
-                    allExceptUpcoming
-                }
-            }
-
-            // Try multiple selectors to find match links
-            var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
-            Log.d("Scraper", "Found ${detailLinks.size} links with '/enx/event/' pattern in ${section.displayName} section")
-            
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='/event/']")
-                Log.d("Scraper", "Found ${detailLinks.size} links with '/event/' pattern")
-            }
-            
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='event']")
-                Log.d("Scraper", "Found ${detailLinks.size} links containing 'event'")
-            }
-            
-            // Let's also check what links we do have
-            val allLinks = sectionDoc.select("a[href]")
-            Log.d("Scraper", "Total links found in section: ${allLinks.size}")
-            
-            if (allLinks.isNotEmpty() && detailLinks.isEmpty()) {
-                Log.d("Scraper", "Sample of first 10 links found:")
-                allLinks.take(10).forEach { link ->
-                    Log.d("Scraper", "Link: ${link.attr("href")} - Text: ${link.text().take(50)}")
-                }
-            }
-            
-            if (detailLinks.isEmpty()) {
-                // Check for tables or other structures that might contain matches
-                val tables = sectionDoc.select("table")
-                Log.d("Scraper", "Found ${tables.size} tables in the section")
-                
-                val divs = sectionDoc.select("div")
-                Log.d("Scraper", "Found ${divs.size} div elements in the section")
-                
-                // Look for any elements that might contain match information
-                val matchKeywords = sectionDoc.select(":contains(vs), :contains(VS), :contains(-), :contains(football), :contains(match)")
-                Log.d("Scraper", "Found ${matchKeywords.size} elements containing match-related keywords")
-                
-                Log.d("Scraper", "Section text (first 500 chars): ${sectionDoc.text().take(500)}")
-            }
-
-            // Process the links we found
-            for (link in detailLinks) {
-                val href = link.attr("href")
-                if (href.isBlank()) continue
-                
-                val detailPageUrl = if (href.startsWith("http")) {
-                    href
-                } else if (href.startsWith("/")) {
-                    "https://livetv.sx$href"
-                } else {
-                    "https://livetv.sx/$href"
-                }
-                
-                Log.d("Scraper", "Processing link: $detailPageUrl")
-                
-                // Try to find the match information in various ways
-                var row = link.closest("tr")
-                if (row == null) row = link.parent()
-                if (row == null) row = link
-                
-                var time = ""
-                var teams = ""
-                var competition = ""
-                
-                // Enhanced selectors for match information based on livetv.sx structure
-                if (row != null) {
-                    // Time extraction - try multiple approaches
-                    time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
-                    
-                    // Team extraction - try multiple approaches as the main content varies
-                    teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
-                    
-                    // Competition/League extraction - usually shorter text with league name
-                    competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
-                    
-                    // Alternative: look for the link text which often contains team names
-                    if (teams.isBlank() || teams.length < 5) {
-                        teams = row.select("a").first()?.text()?.trim() ?: ""
-                    }
-                    
-                    // If teams still looks like league info and competition looks like team names, swap them
-                    if (teams.isNotBlank() && competition.isNotBlank()) {
-                        // Check if what we think are "teams" is actually league/date/time info
-                        val teamsLooksLikeLeague = teams.length < 10 || 
-                                                 teams.contains(Regex("""\([^)]+\)""")) ||  // Contains parentheses with league info
-                                                 teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||  // Contains date pattern like "15 September at"
-                                                 teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
-                        
-                        // Check if what we think is "competition" actually contains team names (longer text, contains team separators, actual team names)
-                        val competitionLooksLikeTeams = competition.length > 15 ||
-                                                       competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||  // Team separators or scores
-                                                       competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2  // Exactly two parts when split by separators
-                        
-                        if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
-                            // Swap them
-                            val temp = teams
-                            teams = competition
-                            competition = temp
-                            Log.d("Scraper", "Swapped teams and competition fields - Teams: '$teams', Competition: '$competition'")
-                        }
-                    }
-                    
-                    // Extract time from the teams/competition text if time is still empty
-                    if (time.isBlank()) {
-                        val combinedText = "$teams $competition"
-                        val timePattern = Regex("""\b(\d{1,2}:\d{2})\b""")
-                        val timeMatch = timePattern.find(combinedText)
-                        if (timeMatch != null) {
-                            time = timeMatch.value
-                        } else {
-                            // Try to extract time from date patterns like "14 September at 15:30"
-                            val dateTimePattern = Regex("""\d{1,2}\s+\w+\s+at\s+(\d{1,2}:\d{2})""")
-                            val dateTimeMatch = dateTimePattern.find(combinedText)
-                            if (dateTimeMatch != null) {
-                                time = dateTimeMatch.groupValues[1]
-                            }
-                        }
-                    }
-                }
-                
-                // If we couldn't find team info in the row, try the link text itself
-                if (teams.isBlank() || teams.length < 5) {
-                    teams = link.text().trim()
-                }
-                
-                // If still no teams, try different approaches
-                if (teams.isBlank() || teams.length < 5) {
-                    // Try to get text from siblings or parent elements
-                    var parent = link.parent()
-                    var attempts = 0
-                    while (parent != null && attempts < 3 && (teams.isBlank() || teams.length < 5)) {
-                        val parentText = parent.ownText().trim()
-                        if (parentText.isNotBlank() && parentText.length > 5) {
-                            teams = parentText
-                            break
-                        }
-                        parent = parent.parent()
-                        attempts++
-                    }
-                }
-                
-                // Clean up teams text - remove time and league info if they got mixed in
-                teams = cleanTeamNames(teams, time, competition)
-                
-                // Extract sport and league information
-                val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
-                
-                Log.d("Scraper", "Raw extraction - Time: '$time', Teams: '$teams', Competition: '$competition'")
-                Log.d("Scraper", "Final match - Teams: '$teams', Time: '$time', Competition: '$competition', Sport: '$sport', League: '$league'")
-                
-                if (teams.isNotBlank() && teams.length > 3) { // Basic validation
-                    matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
-                } else {
-                    Log.w("Scraper", "Skipped match - Teams too short or blank: '$teams' (length: ${teams.length})")
-                }
-            }
-            
-            // Remove duplicates based on URL to avoid LazyColumn key conflicts
-            val uniqueMatches = matches.distinctBy { it.detailPageUrl }
-            
-            // Apply section-specific filtering
-            val filteredMatches = when (section) {
-                ScrapingSection.FOOTBALL -> {
-                    // Filter matches to only include football-related ones
-                    val footballMatches = uniqueMatches.filter { match ->
-                        val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                        combinedText.contains("football") || 
-                        combinedText.contains("soccer") ||
-                        combinedText.contains("premier") || 
-                        combinedText.contains("liga") ||
-                        combinedText.contains("bundesliga") || 
-                        combinedText.contains("serie a") ||
-                        combinedText.contains("ligue") ||
-                        combinedText.contains("champions league") ||
-                        combinedText.contains("europa league") ||
-                        combinedText.contains("uefa") ||
-                        combinedText.contains("fifa") ||
-                        combinedText.contains("world cup") ||
-                        match.sport.lowercase() == "football"
-                    }
-                    Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
-                    footballMatches
-                }
-                else -> uniqueMatches // No additional filtering for other sections
-            }
-            
-            // Apply pagination if requested
-            val paginatedMatches = if (limit > 0) {
-                val startIndex = offset.coerceAtLeast(0)
-                val endIndex = (startIndex + limit).coerceAtMost(filteredMatches.size)
-                if (startIndex < filteredMatches.size) {
-                    filteredMatches.subList(startIndex, endIndex)
-                } else {
-                    emptyList()
-                }
-            } else {
-                filteredMatches
-            }
-            
-            Log.d("Scraper", "Successfully parsed ${matches.size} matches from main page.")
-            if (matches.size != uniqueMatches.size) {
-                Log.d("Scraper", "Removed ${matches.size - uniqueMatches.size} duplicate matches.")
-            }
-            
-            if (limit > 0) {
-                Log.d("Scraper", "Applied pagination - Offset: $offset, Limit: $limit, Returned: ${paginatedMatches.size} out of ${filteredMatches.size} total matches")
-            }
-            
-            paginatedMatches
+            // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
+            val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, limit, offset)
+            Log.d("Scraper", "Successfully parsed ${result.size} matches from main page.")
+            result
         } catch (e: Exception) {
             Log.e("Scraper", "Error scraping match list", e)
             emptyList()
@@ -301,153 +104,183 @@ class Scraper(private val context: Context) {
      */
     suspend fun scrapeAllMatches(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
         val url = urlPreferences.getBaseUrl()
+        val baseOrigin = baseOriginOf(url)
         Log.d("Scraper", "Background scraping ALL matches from: $url (section: ${section.displayName})")
-        
         try {
-            // Use the same logic as scrapeMatchList but without pagination limits
-            val html = fetchHtmlWithOkHttp(url)
-            val doc = Jsoup.parse(html)
-            val matches = mutableListOf<Match>()
-            
-            // Filter document by section if specified
-            val sectionDoc = when (section) {
-                ScrapingSection.ALL -> doc
-                ScrapingSection.TOP_EVENTS_LIVE -> {
-                    val upcomingSection = doc.select("#upcoming").first()
-                    if (upcomingSection != null) {
-                        Log.d("Scraper", "Found 'upcoming' section for background scraping")
-                        upcomingSection
-                    } else {
-                        Log.d("Scraper", "No 'upcoming' section found for background scraping, using full document")
-                        doc
-                    }
-                }
-                ScrapingSection.FOOTBALL -> {
-                    val allExceptUpcoming = doc.clone()
-                    allExceptUpcoming.select("#upcoming").remove()
-                    Log.d("Scraper", "Background scraping football section (excluding #upcoming)")
-                    allExceptUpcoming
-                }
-            }
-
-            // Find all match links (same logic as scrapeMatchList)
-            var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='/event/']")
-            }
-            if (detailLinks.isEmpty()) {
-                detailLinks = sectionDoc.select("a[href*='event']")
-            }
-            
-            Log.d("Scraper", "Background scraping found ${detailLinks.size} match links")
-
-            // Process all links without pagination
-            for (link in detailLinks) {
-                val href = link.attr("href")
-                if (href.isBlank()) continue
-                
-                val detailPageUrl = if (href.startsWith("http")) {
-                    href
-                } else if (href.startsWith("/")) {
-                    "https://livetv.sx$href"
-                } else {
-                    "https://livetv.sx/$href"
-                }
-                
-                // Extract match information (same logic as scrapeMatchList but simplified for performance)
-                var row = link.closest("tr")
-                if (row == null) row = link.parent()
-                if (row == null) row = link
-                
-                var time = ""
-                var teams = ""
-                var competition = ""
-                
-                if (row != null) {
-                    time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
-                    teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
-                    competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
-                    
-                    // Use link text as fallback for teams
-                    if (teams.isBlank() || teams.length < 5) {
-                        teams = row.select("a").first()?.text()?.trim() ?: ""
-                    }
-                    
-                    // Swap teams and competition if needed (same logic as main scraper)
-                    if (teams.isNotBlank() && competition.isNotBlank()) {
-                        val teamsLooksLikeLeague = teams.length < 10 || 
-                                                 teams.contains(Regex("""\([^)]+\)""")) ||
-                                                 teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||
-                                                 teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
-                        
-                        val competitionLooksLikeTeams = competition.length > 15 ||
-                                                       competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||
-                                                       competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2
-                        
-                        if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
-                            val temp = teams
-                            teams = competition
-                            competition = temp
-                        }
-                    }
-                    
-                    // Extract time from text if needed
-                    if (time.isBlank()) {
-                        val combinedText = "$teams $competition"
-                        val timePattern = Regex("""\b(\d{1,2}:\d{2})\b""")
-                        val timeMatch = timePattern.find(combinedText)
-                        if (timeMatch != null) {
-                            time = timeMatch.value
-                        }
-                    }
-                }
-                
-                // Use link text as final fallback
-                if (teams.isBlank()) {
-                    teams = link.text().trim()
-                }
-                
-                // Clean and extract sport/league info
-                teams = cleanTeamNames(teams, time, competition)
-                val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
-                
-                // Add match if valid (basic validation)
-                if (teams.isNotBlank() && teams.length > 3) {
-                    matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
-                }
-            }
-            
-            // Remove duplicates and apply section filtering
-            val uniqueMatches = matches.distinctBy { it.detailPageUrl }
-            
-            val filteredMatches = when (section) {
-                ScrapingSection.FOOTBALL -> {
-                    uniqueMatches.filter { match ->
-                        val combinedText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                        combinedText.contains("football") || 
-                        combinedText.contains("soccer") ||
-                        combinedText.contains("premier") || 
-                        combinedText.contains("liga") ||
-                        combinedText.contains("bundesliga") || 
-                        combinedText.contains("serie a") ||
-                        combinedText.contains("ligue") ||
-                        combinedText.contains("champions league") ||
-                        combinedText.contains("europa league") ||
-                        combinedText.contains("uefa") ||
-                        combinedText.contains("fifa") ||
-                        combinedText.contains("world cup") ||
-                        match.sport.lowercase() == "football"
-                    }
-                }
-                else -> uniqueMatches
-            }
-            
-            Log.d("Scraper", "Background scraping completed: ${filteredMatches.size} matches found (${matches.size} total, ${uniqueMatches.size} unique)")
-            filteredMatches
-            
+            // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
+            val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, 0, 0)
+            Log.d("Scraper", "Background scraping completed: ${result.size} matches found")
+            result
         } catch (e: Exception) {
             Log.e("Scraper", "Error in background scraping", e)
             emptyList()
+        }
+    }
+
+    /**
+     * FIX #20: Selects the relevant sub-document for a given [ScrapingSection].
+     * Previously this identical `when` block was inlined — and duplicated — in both
+     * [scrapeMatchList] and [scrapeAllMatches].
+     */
+    private fun sectionDocFor(
+        doc: org.jsoup.nodes.Document,
+        section: ScrapingSection
+    ): org.jsoup.nodes.Element = when (section) {
+        ScrapingSection.ALL -> doc
+        ScrapingSection.TOP_EVENTS_LIVE -> {
+            val upcoming = doc.select("#upcoming").first()
+            if (upcoming != null) {
+                Log.d("Scraper", "Found 'upcoming' section with ${upcoming.select("a").size} links")
+                upcoming
+            } else {
+                Log.d("Scraper", "No 'upcoming' section found, falling back to full document")
+                doc
+            }
+        }
+        ScrapingSection.FOOTBALL -> {
+            val copy = doc.clone()
+            copy.select("#upcoming").remove()
+            Log.d("Scraper", "Using document minus #upcoming for Football section")
+            copy
+        }
+    }
+
+    /**
+     * FIX #20: Single implementation of match-row parsing shared by [scrapeMatchList]
+     * (paginated, limit > 0) and [scrapeAllMatches] (limit = 0, no pagination).
+     *
+     * Handles: link-selector cascade, per-row field extraction, time fallback,
+     * team/competition swap heuristic, parent-traversal fallback, dedup,
+     * FOOTBALL section filtering, and optional pagination.
+     */
+    private fun parseMatchRows(
+        sectionDoc: org.jsoup.nodes.Element,
+        section: ScrapingSection,
+        baseOrigin: String,
+        limit: Int = 0,
+        offset: Int = 0
+    ): List<Match> {
+        // ── Link discovery ────────────────────────────────────────────────────
+        var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
+        Log.d("Scraper", "Found ${detailLinks.size} links with '/enx/event/' pattern in ${section.displayName} section")
+        if (detailLinks.isEmpty()) {
+            detailLinks = sectionDoc.select("a[href*='/event/']")
+            Log.d("Scraper", "Found ${detailLinks.size} links with '/event/' pattern")
+        }
+        if (detailLinks.isEmpty()) {
+            detailLinks = sectionDoc.select("a[href*='event']")
+            Log.d("Scraper", "Found ${detailLinks.size} links containing 'event'")
+        }
+        if (BuildConfig.DEBUG) {
+            val allLinks = sectionDoc.select("a[href]")
+            Log.d("Scraper", "Total links found in section: ${allLinks.size}")
+            if (allLinks.isNotEmpty() && detailLinks.isEmpty()) {
+                Log.d("Scraper", "Sample of first 10 links found:")
+                allLinks.take(10).forEach { Log.d("Scraper", "Link: ${it.attr("href")} - Text: ${it.text().take(50)}") }
+            }
+            if (detailLinks.isEmpty()) {
+                Log.d("Scraper", "Found ${sectionDoc.select("table").size} tables in section")
+                Log.d("Scraper", "Section text (first 500 chars): ${sectionDoc.text().take(500)}")
+            }
+        }
+
+        // ── Per-link processing ───────────────────────────────────────────────
+        val matches = mutableListOf<Match>()
+        for (link in detailLinks) {
+            val href = link.attr("href")
+            if (href.isBlank()) continue
+
+            val detailPageUrl = when {
+                href.startsWith("http") -> href
+                href.startsWith("/")    -> "$baseOrigin$href"
+                else                    -> "$baseOrigin/$href"
+            }
+
+            val row: org.jsoup.nodes.Element = link.closest("tr") ?: link.parent() ?: link
+
+            var time = row.select("td.time, .time, [class*='time'], td:first-child").text().trim()
+            var teams = row.select("td.evdesc, .evdesc, .event-title, .event-desc, [class*='event'], [class*='team'], td:nth-child(3)").text().trim()
+            var competition = row.select("td.league > a, .league, .competition, [class*='league'], td:nth-child(2)").text().trim()
+
+            if (teams.isBlank() || teams.length < 5) {
+                teams = row.select("a").first()?.text()?.trim() ?: ""
+            }
+
+            // Heuristic: swap teams/competition if their content looks reversed.
+            if (teams.isNotBlank() && competition.isNotBlank()) {
+                val teamsLooksLikeLeague = teams.length < 10 ||
+                    teams.contains(Regex("""\([^)]+\)""")) ||
+                    teams.contains(Regex("""\d{1,2}\s+\w+\s+at""")) ||
+                    teams.lowercase().contains(Regex("""\b(ncaa|nba|nfl|mlb|nhl|premier|liga|serie|bundesliga|league|cup|championship|division|conference|botola|pro|first|elite)\b"""))
+                val competitionLooksLikeTeams = competition.length > 15 ||
+                    competition.contains(Regex("""[–—-]|\bvs?\.?\b|\d+:\d+""")) ||
+                    competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2
+                if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
+                    val tmp = teams; teams = competition; competition = tmp
+                    Log.d("Scraper", "Swapped teams/competition — Teams: '$teams', Competition: '$competition'")
+                }
+            }
+
+            // Time fallback: extract from combined text
+            if (time.isBlank()) {
+                val ct = "$teams $competition"
+                time = Regex("""\b(\d{1,2}:\d{2})\b""").find(ct)?.value
+                    ?: Regex("""\d{1,2}\s+\w+\s+at\s+(\d{1,2}:\d{2})""").find(ct)?.groupValues?.getOrNull(1)
+                    ?: ""
+            }
+
+            // Team-name fallbacks
+            if (teams.isBlank() || teams.length < 5) teams = link.text().trim()
+            if (teams.isBlank() || teams.length < 5) {
+                var parent = link.parent(); var attempts = 0
+                while (parent != null && attempts < 3 && (teams.isBlank() || teams.length < 5)) {
+                    val t = parent.ownText().trim()
+                    if (t.isNotBlank() && t.length > 5) { teams = t; break }
+                    parent = parent.parent(); attempts++
+                }
+            }
+
+            teams = cleanTeamNames(teams, time, competition)
+            val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
+
+            Log.d("Scraper", "Raw: Time='$time' Teams='$teams' Competition='$competition'")
+            Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league'")
+
+            if (teams.isNotBlank() && teams.length > 3) {
+                matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
+            } else {
+                Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
+            }
+        }
+
+        // ── Dedup ─────────────────────────────────────────────────────────────
+        val uniqueMatches = matches.distinctBy { it.detailPageUrl }
+        if (matches.size != uniqueMatches.size) {
+            Log.d("Scraper", "Removed ${matches.size - uniqueMatches.size} duplicate matches.")
+        }
+
+        // ── Section filtering ─────────────────────────────────────────────────
+        val filteredMatches = when (section) {
+            ScrapingSection.FOOTBALL -> {
+                val footballMatches = uniqueMatches.filter { match ->
+                    val ct = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
+                    FOOTBALL_KEYWORDS.any { ct.contains(it) } || match.sport.lowercase() == "football"
+                }
+                Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
+                footballMatches
+            }
+            else -> uniqueMatches
+        }
+
+        // ── Pagination (limit = 0 means no limit) ─────────────────────────────
+        return if (limit > 0) {
+            val start = offset.coerceAtLeast(0)
+            val end = (start + limit).coerceAtMost(filteredMatches.size)
+            Log.d("Scraper", "Pagination — offset=$offset limit=$limit returned=${end - start} of ${filteredMatches.size}")
+            if (start < filteredMatches.size) filteredMatches.subList(start, end) else emptyList()
+        } else {
+            filteredMatches
         }
     }
 
@@ -497,7 +330,7 @@ class Scraper(private val context: Context) {
             combinedText.contains("ufc") -> {
                 sport = "Combat Sports"
             }
-            combinedText.contains("formula") || combinedText.contains("f1") || 
+            combinedText.contains("formula") || combinedText.contains(Regex("""\bf1\b""", RegexOption.IGNORE_CASE)) ||
             combinedText.contains("motogp") || combinedText.contains("racing") -> {
                 sport = "Motor Sports"
             }
@@ -650,10 +483,8 @@ class Scraper(private val context: Context) {
             val scriptTags = doc.select("script")
             scriptTags.forEach { script ->
                 val scriptContent = script.html()
-                
-                // Extract URLs from JavaScript
-                val urlRegex = """https?://[^\s"'<>]+(?:\.m3u8|stream|live|watch|player)""".toRegex(RegexOption.IGNORE_CASE)
-                val jsUrls = urlRegex.findAll(scriptContent).map { it.value }.toList()
+                // FIX #17: Use pre-compiled companion-object regex instead of recompiling each iteration
+                val jsUrls = JS_URL_REGEX.findAll(scriptContent).map { it.value }.toList()
                 links.addAll(jsUrls)
             }
 
@@ -726,39 +557,44 @@ class Scraper(private val context: Context) {
                 }
             }
             
-            // Debug: Log all found URLs before filtering
-            Log.d("Scraper", "Found ${transformedLinks.size} URLs before filtering:")
-            transformedLinks.forEach { url ->
-                Log.d("Scraper", "URL: $url")
+            // FIX #18: Guard O(n) per-URL diagnostic logging behind DEBUG so it doesn't
+            // emit one log line per URL in release builds.
+            if (BuildConfig.DEBUG) {
+                Log.d("Scraper", "Found ${transformedLinks.size} URLs before filtering:")
+                transformedLinks.forEach { url ->
+                    Log.d("Scraper", "URL: $url")
+                }
             }
-            
+
             // Filter out invalid or incomplete URLs
             val finalLinks = transformedLinks.filter { link ->
                 val isValid = isValidStreamUrl(link)
-                if (!isValid) {
+                if (!isValid && BuildConfig.DEBUG) {
                     Log.d("Scraper", "FILTERED OUT invalid URL: $link")
                 }
                 isValid
             }
             
             Log.d("Scraper", "Final valid URLs: ${finalLinks.size}")
-            
             Log.d("Scraper", "Found ${transformedLinks.size} total links, ${finalLinks.size} valid stream links for $detailPageUrl")
-            if (transformedLinks.size != finalLinks.size) {
+            // FIX #18: Building the stream-types summary string is O(n) work; keep it debug-only.
+            if (BuildConfig.DEBUG && transformedLinks.size != finalLinks.size) {
                 val filteredOut = transformedLinks - finalLinks.toSet()
                 Log.d("Scraper", "Filtered out ${filteredOut.size} invalid links: ${filteredOut.joinToString()}")
             }
-            Log.d("Scraper", "Stream types found: ${finalLinks.joinToString(", ") { 
-                when {
-                    it.startsWith("acestream://") -> "Acestream"
-                    it.contains("/ace/getstream?id=") -> "Acestream (HTTP Proxy)"
-                    it.contains(".m3u8") -> "M3U8/HLS"
-                    it.startsWith("rtmp") -> "RTMP"
-                    it.contains("youtube.com") || it.contains("youtu.be") -> "YouTube"
-                    it.contains("twitch.tv") -> "Twitch"
-                    else -> "HTTP/Web"
-                }
-            }}")
+            if (BuildConfig.DEBUG) {
+                Log.d("Scraper", "Stream types found: ${finalLinks.joinToString(", ") { 
+                    when {
+                        it.startsWith("acestream://") -> "Acestream"
+                        it.contains("/ace/getstream?id=") -> "Acestream (HTTP Proxy)"
+                        it.contains(".m3u8") -> "M3U8/HLS"
+                        it.startsWith("rtmp") -> "RTMP"
+                        it.contains("youtube.com") || it.contains("youtu.be") -> "YouTube"
+                        it.contains("twitch.tv") -> "Twitch"
+                        else -> "HTTP/Web"
+                    }
+                }}")
+            }
             
             finalLinks
         } catch (e: Exception) {
@@ -835,14 +671,29 @@ class Scraper(private val context: Context) {
         return hasValidDomain
     }
 
-    private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {
-        val client = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
-            .hostnameVerifier { _, _ -> true }
-            .build()
+    /**
+     * Extracts the origin (scheme + host) from a URL so that relative links scraped from a
+     * page are resolved against the configured base URL rather than the hardcoded livetv.sx
+     * domain. Falls back to the livetv.sx origin if the URL cannot be parsed.
+     * FIX #12
+     */
+    private fun baseOriginOf(url: String): String = try {
+        val parsed = java.net.URI(url)
+        "${parsed.scheme}://${parsed.host}"
+    } catch (_: Exception) { "https://livetv.sx" }
 
+    private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {
+        // FIX #16: Return cached HTML if the same URL was fetched within the TTL window.
+        // This prevents scrapeAllMatches() (background) from re-downloading a page that
+        // scrapeMatchList() (initial load) already fetched moments earlier.
+        htmlCache?.let { entry ->
+            if (entry.url == url && System.currentTimeMillis() - entry.fetchedAt < HTML_CACHE_TTL_MS) {
+                Log.d("Scraper", "HTML cache hit for $url (${entry.html.length} chars)")
+                return@withContext entry.html
+            }
+        }
+
+        // FIX #15: Reuse the single shared scrapingClient instead of building a new one per call.
         val request = okhttp3.Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -853,27 +704,27 @@ class Scraper(private val context: Context) {
             .header("Cache-Control", "no-cache")
             .build()
 
-        client.newCall(request).execute().use { response ->
+        scrapingClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 Log.e("Scraper", "HTTP error: ${response.code} - ${response.message}")
                 throw java.io.IOException("HTTP error: ${response.code}")
             }
-            
+
             val body = response.body
-            if (body == null) {
-                throw java.io.IOException("Empty response body")
-            }
-            
-            // OkHttp should automatically decompress gzipped content, but let's be explicit
+                ?: throw java.io.IOException("Empty response body")
+
             val content = body.string()
             Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
+            // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
+            // URL can skip the network round-trip entirely.
+            htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())
             content
         }
     }
 
     private fun createInsecureSslSocketFactory(): javax.net.ssl.SSLSocketFactory {
         val trustAllManager = createTrustAllManager()
-        val sslContext = javax.net.ssl.SSLContext.getInstance("SSL")
+        val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
         sslContext.init(null, arrayOf(trustAllManager), java.security.SecureRandom())
         return sslContext.socketFactory
     }
@@ -895,83 +746,82 @@ class Scraper(private val context: Context) {
     }
 
     private suspend fun fetchHtmlWithWebView(url: String, waitForSelector: String): String? = withTimeoutOrNull(20000) { // 20 second timeout
-        suspendCancellableCoroutine<String?> { continuation ->
-            // Must run WebView on the main thread
-            // No need for withContext(Dispatchers.Main) if the calling coroutine is already on Main
-            // But to be safe, let's ensure it. However, since this is a suspend function,
-            // the caller's context matters. Let's assume for now the caller handles the Main thread.
-            // The ViewModel will call this from Dispatchers.IO, so we must switch to Main.
-            kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-                Log.d("ScraperWebView", "Creating WebView for $url")
-                val webView = WebView(context)
-
-                val webAppInterface = WebAppInterface { html ->
-                    if (continuation.isActive) {
-                        continuation.resume(html)
-                    }
-                    // It's crucial to destroy the WebView on the main thread
-                    webView.destroy()
-                }
-
-                val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-                webView.settings.userAgentString = desktopUserAgent
-                webView.settings.javaScriptEnabled = true
-                webView.settings.domStorageEnabled = true
-                webView.settings.allowFileAccess = true
-                webView.settings.allowContentAccess = true
-                webView.settings.allowUniversalAccessFromFileURLs = true
-                webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                webView.addJavascriptInterface(webAppInterface, "Android")
-
-                webView.webViewClient = object : WebViewClient() {
-                    override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                        handler?.proceed() // Ignore SSL errors
-                    }
-
-                    override fun onPageFinished(view: WebView, url: String) {
-                        Log.d("ScraperWebView", "onPageFinished for $url. Injecting polling script.")
-                        val script = """
-                            (function() {
-                                const selector = '$waitForSelector';
-                                const maxTries = 40; // Increased from 20
-                                let tries = 0;
-                                const interval = setInterval(() => {
-                                    const elementFound = document.querySelector(selector);
-                                    if (elementFound || tries >= maxTries) {
-                                        clearInterval(interval);
-                                        if(elementFound) {
-                                            Android.processHTML(document.documentElement.outerHTML);
-                                        } else {
-                                            // If element is not found after all tries, return the whole html
-                                            // to allow for fallback parsing.
-                                            Android.processHTML(document.documentElement.outerHTML);
-                                        }
-                                    }
-                                    tries++;
-                                }, 500);
-                            })();
-                        """
-                        view.evaluateJavascript(script, null)
-                    }
-
-                     @RequiresApi(Build.VERSION_CODES.M)
-                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                        super.onReceivedError(view, request, error)
+        // FIX #13/#14: Use withContext(Dispatchers.Main) instead of GlobalScope.launch so the
+        // WebView lifetime is tied to the calling coroutine's scope (viewModelScope). The outer
+        // try/finally is the single, reliable cleanup point — it fires on normal completion,
+        // cancellation, and exceptions alike, replacing the unreliable invokeOnCancellation lambda.
+        withContext(Dispatchers.Main) {
+            Log.d("ScraperWebView", "Creating WebView for $url")
+            val webView = WebView(context)
+            try {
+                suspendCancellableCoroutine<String?> { continuation ->
+                    val webAppInterface = WebAppInterface { html ->
                         if (continuation.isActive) {
-                            continuation.resumeWithException(RuntimeException("WebView error: ${error?.description}"))
+                            continuation.resume(html)
                         }
-                        view?.destroy()
+                        // Cleanup handled by the outer try/finally; do not call webView.destroy() here.
                     }
-                }
 
-                continuation.invokeOnCancellation {
-                    // Ensure WebView is destroyed on the main thread if the coroutine is cancelled
-                     kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-                        webView.destroy()
+                    val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+                    webView.settings.userAgentString = desktopUserAgent
+                    webView.settings.javaScriptEnabled = true
+                    webView.settings.domStorageEnabled = true
+                    webView.settings.allowFileAccess = true
+                    webView.settings.allowContentAccess = true
+                    // FIX #4: allowUniversalAccessFromFileURLs removed — it allowed JS to bypass
+                    // the Same-Origin Policy and read arbitrary local files. Default (false) is secure.
+                    webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    webView.addJavascriptInterface(webAppInterface, "Android")
+
+                    webView.webViewClient = object : WebViewClient() {
+                        // FIX #2: Cancel rather than proceed on SSL errors. Silently proceeding
+                        // allowed MITM attacks inside the WebView scraping session.
+                        override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                            Log.e("ScraperWebView", "SSL error (cancelled): primaryError=${error?.primaryError}, url=${error?.url}")
+                            handler?.cancel()
+                        }
+
+                        override fun onPageFinished(view: WebView, url: String) {
+                            Log.d("ScraperWebView", "onPageFinished for $url. Injecting polling script.")
+                            val script = """
+                                (function() {
+                                    const selector = '$waitForSelector';
+                                    const maxTries = 40; // Increased from 20
+                                    let tries = 0;
+                                    const interval = setInterval(() => {
+                                        const elementFound = document.querySelector(selector);
+                                        if (elementFound || tries >= maxTries) {
+                                            clearInterval(interval);
+                                            if(elementFound) {
+                                                Android.processHTML(document.documentElement.outerHTML);
+                                            } else {
+                                                // If element is not found after all tries, return the whole html
+                                                // to allow for fallback parsing.
+                                                Android.processHTML(document.documentElement.outerHTML);
+                                            }
+                                        }
+                                        tries++;
+                                    }, 500);
+                                })();
+                            """
+                            view.evaluateJavascript(script, null)
+                        }
+
+                         @RequiresApi(Build.VERSION_CODES.M)
+                         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                            super.onReceivedError(view, request, error)
+                            if (continuation.isActive) {
+                                continuation.resumeWithException(RuntimeException("WebView error: ${error?.description}"))
+                            }
+                            // Cleanup handled by the outer try/finally; do not call view?.destroy() here.
+                        }
                     }
-                }
 
-                webView.loadUrl(url)
+                    webView.loadUrl(url)
+                }
+            } finally {
+                // Single, reliable cleanup: covers normal completion, cancellation, and exceptions.
+                webView.destroy()
             }
         }
     }

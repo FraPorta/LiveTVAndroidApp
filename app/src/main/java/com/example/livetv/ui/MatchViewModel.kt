@@ -7,7 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.livetv.data.model.Match
 import com.example.livetv.data.repository.MatchRepository
-import com.example.livetv.data.network.ScrapingSection
+import com.example.livetv.data.model.ScrapingSection
 import kotlinx.coroutines.launch
 
 const val INITIAL_LOAD_SIZE = 16
@@ -31,14 +31,22 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     
     private val sectionCache = mutableMapOf<ScrapingSection, SectionData>()
 
-    // Full list of matches scraped from the main page (loaded on demand)
-    private var allMatches = listOf<Match>()
-    
-    // Track if we have loaded all matches (needed for filtering)
-    private var hasLoadedAllMatches = false
-    
-    // Track how many matches we've fetched so far
-    private var totalFetchedMatches = 0
+    // Single source of truth: all mutable section state lives in the cache.
+    // Computed properties give callers the same read/write syntax as plain fields.
+    private fun currentSectionData(): SectionData =
+        sectionCache.getOrPut(selectedSection.value) { SectionData() }
+
+    private var allMatches: List<Match>
+        get() = currentSectionData().allMatches
+        set(value) { sectionCache[selectedSection.value] = currentSectionData().copy(allMatches = value) }
+
+    private var hasLoadedAllMatches: Boolean
+        get() = currentSectionData().hasLoadedAllMatches
+        set(value) { sectionCache[selectedSection.value] = currentSectionData().copy(hasLoadedAllMatches = value) }
+
+    private var totalFetchedMatches: Int
+        get() = currentSectionData().totalFetchedMatches
+        set(value) { sectionCache[selectedSection.value] = currentSectionData().copy(totalFetchedMatches = value) }
 
     // The list of matches currently displayed on the UI
     val visibleMatches = mutableStateOf<List<Match>>(emptyList())
@@ -57,12 +65,16 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     val isSearchActive = mutableStateOf(false)
     val isBackgroundScraping = mutableStateOf(false)
 
-    // The number of matches currently shown (after filtering)
-    private var currentVisibleCount = 0
+    private var currentVisibleCount: Int
+        get() = currentSectionData().currentVisibleCount
+        set(value) { sectionCache[selectedSection.value] = currentSectionData().copy(currentVisibleCount = value) }
 
     val isLoadingInitialList = mutableStateOf(false)
     val errorMessage = mutableStateOf<String?>(null)
     val isRefreshing = mutableStateOf(false)
+    // FIX #6: Guard against concurrent invocations of loadMoreMatches() that would
+    // append duplicate entries to visibleMatches.
+    val isLoadingMore = mutableStateOf(false)
 
     init {
         Log.d("ViewModel", "MatchViewModel initialized.")
@@ -70,43 +82,21 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * Saves current section data to cache before switching sections
-     */
-    private fun saveCurrentSectionData() {
-        val currentSection = selectedSection.value
-        sectionCache[currentSection] = SectionData(
-            allMatches = allMatches,
-            hasLoadedAllMatches = hasLoadedAllMatches,
-            totalFetchedMatches = totalFetchedMatches,
-            currentVisibleCount = currentVisibleCount,
-            selectedSport = selectedSport.value,
-            selectedLeague = selectedLeague.value,
-            availableSports = availableSports.value,
-            availableLeagues = availableLeagues.value
-        )
-        Log.d("ViewModel", "Saved ${allMatches.size} matches for section: ${currentSection.displayName}")
-    }
-    
-    /**
-     * Restores section data from cache if available
+     * Restores the observable filter state (mutableStateOf) from the cache for [section].
+     * Returns true if valid cached data exists.
      */
     private fun restoreSectionData(section: ScrapingSection): Boolean {
-        val cachedData = sectionCache[section]
-        return if (cachedData != null && cachedData.allMatches.isNotEmpty()) {
-            allMatches = cachedData.allMatches
-            hasLoadedAllMatches = cachedData.hasLoadedAllMatches
-            totalFetchedMatches = cachedData.totalFetchedMatches
-            currentVisibleCount = cachedData.currentVisibleCount
-            selectedSport.value = cachedData.selectedSport
-            selectedLeague.value = cachedData.selectedLeague
-            availableSports.value = cachedData.availableSports
-            availableLeagues.value = cachedData.availableLeagues
-            Log.d("ViewModel", "Restored ${allMatches.size} matches for section: ${section.displayName}")
-            true
-        } else {
+        val cached = sectionCache[section]
+        if (cached == null || cached.allMatches.isEmpty()) {
             Log.d("ViewModel", "No cached data found for section: ${section.displayName}")
-            false
+            return false
         }
+        selectedSport.value = cached.selectedSport
+        selectedLeague.value = cached.selectedLeague
+        availableSports.value = cached.availableSports
+        availableLeagues.value = cached.availableLeagues
+        Log.d("ViewModel", "Restored ${cached.allMatches.size} matches for section: ${section.displayName}")
+        return true
     }
 
     fun loadInitialMatchList() {
@@ -158,10 +148,8 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     fun changeSection(section: ScrapingSection) {
         Log.d("ViewModel", "Changing section from ${selectedSection.value.displayName} to ${section.displayName}")
         
-        // Save current section data to cache
-        saveCurrentSectionData()
-        
-        // Update selected section
+        // Update selected section (setters on allMatches etc. already write to the old
+        // section's cache entry, so no explicit save step is needed)
         selectedSection.value = section
         
         // Try to restore cached data for the new section
@@ -175,58 +163,66 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadMoreMatches() {
+        if (isLoadingMore.value) return
+        isLoadingMore.value = true
         viewModelScope.launch {
-            val filteredMatches = getFilteredMatches()
-            Log.d("ViewModel", "loadMoreMatches called. Current visible: $currentVisibleCount / ${filteredMatches.size} (filtered from ${allMatches.size} total)")
-            
-            val nextLoadCount = if (currentVisibleCount == 0) INITIAL_LOAD_SIZE else LOAD_MORE_SIZE
-            val newVisibleCount = (currentVisibleCount + nextLoadCount).coerceAtMost(filteredMatches.size)
-
-            if (newVisibleCount > currentVisibleCount) {
-                // We have enough matches locally, use them
-                val nextBatch = filteredMatches.subList(currentVisibleCount, newVisibleCount)
-                Log.d("ViewModel", "Loading next batch of ${nextBatch.size} matches from local data.")
-                visibleMatches.value = visibleMatches.value + nextBatch
-                currentVisibleCount = newVisibleCount
-
-                // Fetch links for the new batch
-                fetchLinksForBatch(nextBatch)
-            } else if (!hasLoadedAllMatches && !hasActiveFilters()) {
-                // We don't have enough local matches and no filters are active,
-                // so fetch more from the repository
-                try {
-                    Log.d("ViewModel", "Fetching more matches from repository. Current total: $totalFetchedMatches")
-                    val moreMatches = repository.getMatchList(
-                        section = selectedSection.value,
-                        limit = LOAD_MORE_SIZE,
-                        offset = totalFetchedMatches
-                    )
-                    
-                    if (moreMatches.isNotEmpty()) {
-                        allMatches = allMatches + moreMatches
-                        totalFetchedMatches += moreMatches.size
-                        Log.d("ViewModel", "Fetched ${moreMatches.size} more matches. Total now: $totalFetchedMatches")
-                        
-                        // Update filter options with new matches
-                        updateFilterOptionsFromCurrentMatches()
-                        
-                        // Update cache with new data
-                        updateCurrentSectionCache()
-                        
-                        // Try loading more matches again with the expanded list
-                        loadMoreMatches()
-                    } else {
-                        hasLoadedAllMatches = true
-                        Log.d("ViewModel", "No more matches available from repository. Total fetched: $totalFetchedMatches")
-                        // Update cache to reflect that all matches are loaded
-                        updateCurrentSectionCache()
-                    }
-                } catch (e: Exception) {
-                    Log.e("ViewModel", "Error fetching more matches", e)
-                }
-            } else {
-                Log.d("ViewModel", "No more matches to load. HasLoadedAll: $hasLoadedAllMatches, HasFilters: ${hasActiveFilters()}")
+            try {
+                loadMoreMatchesInternal()
+            } finally {
+                isLoadingMore.value = false
             }
+        }
+    }
+
+    // FIX #6: Core logic extracted so the recursive "fetch next page" call bypasses the
+    // public guard (which would be set to true and block it) while still being protected
+    // against concurrent external calls via loadMoreMatches().
+    private suspend fun loadMoreMatchesInternal() {
+        val filteredMatches = getFilteredMatches()
+        Log.d("ViewModel", "loadMoreMatches called. Current visible: $currentVisibleCount / ${filteredMatches.size} (filtered from ${allMatches.size} total)")
+
+        val nextLoadCount = if (currentVisibleCount == 0) INITIAL_LOAD_SIZE else LOAD_MORE_SIZE
+        val newVisibleCount = (currentVisibleCount + nextLoadCount).coerceAtMost(filteredMatches.size)
+
+        if (newVisibleCount > currentVisibleCount) {
+            // We have enough matches locally, use them
+            val nextBatch = filteredMatches.subList(currentVisibleCount, newVisibleCount)
+            Log.d("ViewModel", "Loading next batch of ${nextBatch.size} matches from local data.")
+            visibleMatches.value = visibleMatches.value + nextBatch
+            currentVisibleCount = newVisibleCount
+
+            // Fetch links for the new batch
+            fetchLinksForBatch(nextBatch)
+        } else if (!hasLoadedAllMatches && !hasActiveFilters()) {
+            // We don't have enough local matches and no filters are active,
+            // so fetch more from the repository
+            try {
+                Log.d("ViewModel", "Fetching more matches from repository. Current total: $totalFetchedMatches")
+                val moreMatches = repository.getMatchList(
+                    section = selectedSection.value,
+                    limit = LOAD_MORE_SIZE,
+                    offset = totalFetchedMatches
+                )
+
+                if (moreMatches.isNotEmpty()) {
+                    allMatches = allMatches + moreMatches
+                    totalFetchedMatches += moreMatches.size
+                    Log.d("ViewModel", "Fetched ${moreMatches.size} more matches. Total now: $totalFetchedMatches")
+
+                    // Update filter options with new matches
+                    updateFilterOptionsFromCurrentMatches()
+
+                    // Continue loading — call internal directly to bypass the public guard
+                    loadMoreMatchesInternal()
+                } else {
+                    hasLoadedAllMatches = true
+                    Log.d("ViewModel", "No more matches available from repository. Total fetched: $totalFetchedMatches")
+                }
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Error fetching more matches", e)
+            }
+        } else {
+            Log.d("ViewModel", "No more matches to load. HasLoadedAll: $hasLoadedAllMatches, HasFilters: ${hasActiveFilters()}")
         }
     }
 
@@ -288,27 +284,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         if (allMatchesIndex != -1) {
             allMatchesList[allMatchesIndex] = updatedMatch
             allMatches = allMatchesList
-            // Update cache immediately when match data changes
-            updateCurrentSectionCache()
         }
     }
     
-    /**
-     * Updates the cache for the current section with latest data
-     */
-    private fun updateCurrentSectionCache() {
-        val currentSection = selectedSection.value
-        val currentCache = sectionCache[currentSection] ?: SectionData()
-        sectionCache[currentSection] = currentCache.copy(
-            allMatches = allMatches,
-            hasLoadedAllMatches = hasLoadedAllMatches,
-            totalFetchedMatches = totalFetchedMatches,
-            currentVisibleCount = currentVisibleCount
-        )
-    }
-
-
-
     private fun getFilteredMatches(): List<Match> {
         var filtered = allMatches.filter { match ->
             val sportMatches = selectedSport.value == null || 
@@ -336,13 +314,13 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSportFilter(sport: String?) {
         selectedSport.value = if (sport == "All Sports") null else sport
-        updateCurrentSectionCache() // Save filter state to cache
+        sectionCache[selectedSection.value] = currentSectionData().copy(selectedSport = selectedSport.value)
         applyFilters()
     }
 
     fun setLeagueFilter(league: String?) {
         selectedLeague.value = if (league == "All Leagues") null else league
-        updateCurrentSectionCache() // Save filter state to cache
+        sectionCache[selectedSection.value] = currentSectionData().copy(selectedLeague = selectedLeague.value)
         applyFilters()
     }
 
@@ -393,10 +371,13 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateFilterOptionsFromCurrentMatches() {
         val sports = allMatches.map { it.sport }.distinct().sorted()
         val leagues = allMatches.map { it.league }.distinct().sorted()
-        
         availableSports.value = listOf("All Sports") + sports
         availableLeagues.value = listOf("All Leagues") + leagues
-        
+        // Persist so restoreSectionData can reinstate them on section switch
+        sectionCache[selectedSection.value] = currentSectionData().copy(
+            availableSports = availableSports.value,
+            availableLeagues = availableLeagues.value
+        )
         Log.d("ViewModel", "Updated filter options from ${allMatches.size} matches - Sports: ${sports.size}, Leagues: ${leagues.size}")
     }
 
@@ -546,9 +527,6 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 // Update filter options with the complete list
                 updateFilterOptionsFromCurrentMatches()
                 
-                // Update cache with complete data
-                updateCurrentSectionCache()
-                
                 Log.d("ViewModel", "Background scraping updated match list: ${allMatches.size} total matches available for search")
                 
             } catch (e: Exception) {
@@ -590,18 +568,10 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
      * Refreshes the visible matches based on current filters and search query
      */
     private fun refreshVisibleMatches() {
+        // FIX #10: getFilteredMatches() already applies sport, league, AND search filters,
+        // so the redundant second filter block below it has been removed.
         val filteredMatches = getFilteredMatches()
-        
-        // If search is active and query is not empty, filter by search query
-        val searchedMatches = if (isSearchActive.value && searchQuery.value.isNotBlank()) {
-            filteredMatches.filter { match ->
-                val searchText = searchQuery.value.lowercase().trim()
-                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                matchText.contains(searchText)
-            }
-        } else {
-            filteredMatches
-        }
+        val searchedMatches = filteredMatches
         
         // Update visible matches - show all matching results when searching
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {

@@ -64,7 +64,7 @@ The project has 44 distinct issues across security, bugs, memory, performance, a
 
 21. ✅ ~~**Empty `ScrapeSection.kt` / misplaced enum** — [ScrapeSection.kt](app/src/main/java/com/example/livetv/data/model/ScrapeSection.kt): Moved `ScrapingSection` enum from `Scraper.kt` (package `data.network`) into `ScrapeSection.kt` (package `data.model`) where it belongs as a domain type. Updated imports in `Scraper.kt`, `MatchViewModel.kt`, `HomeScreen.kt`, and `MatchRepository.kt`.~~
 
-22. **1391-line `HomeScreen.kt`** — [HomeScreen.kt](app/src/main/java/com/example/livetv/ui/HomeScreen.kt): Split into composable files: `MatchItem.kt`, `SectionSelector.kt`, `SearchBar.kt`, `SettingsDialog.kt`, `UpdateDialog.kt`. *(Large refactor — deferred.)*
+22. ✅ ~~**1391-line `HomeScreen.kt`** — [HomeScreen.kt](app/src/main/java/com/example/livetv/ui/HomeScreen.kt): Split into composable files: `FocusableButton.kt`, `MatchItem.kt`, `SectionSelector.kt` (also fixes #36 `.values()` → `.entries`), `SearchBar.kt`, `SettingsDialog.kt`. HomeScreen.kt reduced from 1386 → 412 lines (imports trimmed to only what HomeScreen + ActionButtons need).~~
 
 23. **Duplicate `SectionData` + top-level vars in ViewModel** — [MatchViewModel.kt ~L20](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L20): Eliminate the top-level vars; read/write exclusively through `sectionCache[currentSection]`, removing `saveCurrentSectionData()` / `restoreSectionData()`. *(Large refactor — deferred.)*
 

@@ -103,22 +103,21 @@ class UpdateManager(private val context: Context) {
             }
             
             val apkFile = File(updatesDir, UPDATE_FILE_NAME)
-            val outputStream = FileOutputStream(apkFile)
-            val inputStream = body.byteStream()
-            
-            val buffer = ByteArray(8192)
-            var downloaded = 0L
-            var bytesRead: Int
-            
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
-                downloaded += bytesRead
-                onProgress(downloaded, contentLength)
+            // FIX #9: Use nested use{} blocks so both streams are always closed,
+            // even if an IOException is thrown mid-download.
+            FileOutputStream(apkFile).use { outputStream ->
+                body.byteStream().use { inputStream ->
+                    val buffer = ByteArray(8192)
+                    var downloaded = 0L
+                    var bytesRead: Int
+
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        downloaded += bytesRead
+                        onProgress(downloaded, contentLength)
+                    }
+                }
             }
-            
-            outputStream.close()
-            inputStream.close()
-            
             DownloadResult.Success(apkFile)
         } catch (e: Exception) {
             DownloadResult.Error("Download failed: ${e.message}")

@@ -47,6 +47,7 @@ class Scraper(private val context: Context) {
         offset: Int = 0
     ): List<Match> = withContext(Dispatchers.IO) {
         val url = urlPreferences.getBaseUrl()
+        val baseOrigin = baseOriginOf(url) // FIX #12: resolve relative links against configured host
         Log.d("Scraper", "Fetching initial match list from: $url")
         
         try {
@@ -127,9 +128,9 @@ class Scraper(private val context: Context) {
                 val detailPageUrl = if (href.startsWith("http")) {
                     href
                 } else if (href.startsWith("/")) {
-                    "https://livetv.sx$href"
+                    "$baseOrigin$href"
                 } else {
-                    "https://livetv.sx/$href"
+                    "$baseOrigin/$href"
                 }
                 
                 Log.d("Scraper", "Processing link: $detailPageUrl")
@@ -301,6 +302,7 @@ class Scraper(private val context: Context) {
      */
     suspend fun scrapeAllMatches(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
         val url = urlPreferences.getBaseUrl()
+        val baseOrigin = baseOriginOf(url) // FIX #12: resolve relative links against configured host
         Log.d("Scraper", "Background scraping ALL matches from: $url (section: ${section.displayName})")
         
         try {
@@ -349,9 +351,9 @@ class Scraper(private val context: Context) {
                 val detailPageUrl = if (href.startsWith("http")) {
                     href
                 } else if (href.startsWith("/")) {
-                    "https://livetv.sx$href"
+                    "$baseOrigin$href"
                 } else {
-                    "https://livetv.sx/$href"
+                    "$baseOrigin/$href"
                 }
                 
                 // Extract match information (same logic as scrapeMatchList but simplified for performance)
@@ -834,6 +836,17 @@ class Scraper(private val context: Context) {
         
         return hasValidDomain
     }
+
+    /**
+     * Extracts the origin (scheme + host) from a URL so that relative links scraped from a
+     * page are resolved against the configured base URL rather than the hardcoded livetv.sx
+     * domain. Falls back to the livetv.sx origin if the URL cannot be parsed.
+     * FIX #12
+     */
+    private fun baseOriginOf(url: String): String = try {
+        val parsed = java.net.URI(url)
+        "${parsed.scheme}://${parsed.host}"
+    } catch (_: Exception) { "https://livetv.sx" }
 
     /**
      * Creates an OkHttpClient that bypasses SSL certificate validation only for the configured

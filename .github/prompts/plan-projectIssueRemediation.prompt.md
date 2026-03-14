@@ -20,19 +20,19 @@ The project has 44 distinct issues across security, bugs, memory, performance, a
 
 ### High — Bugs
 
-6. **`loadMoreMatches()` race condition** — [MatchViewModel.kt ~L166](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L166): Add an `isLoadingMore: Boolean` guard (already a state field) and early-return if it's true. Check and set atomically at the top of the coroutine.
+6. ✅ ~~**`loadMoreMatches()` race condition** — Extracted core logic into `loadMoreMatchesInternal()`; the public `loadMoreMatches()` now guards with `isLoadingMore` state and sets it in a `try/finally`. The recursive page-fetch call invokes `loadMoreMatchesInternal()` directly to bypass the guard correctly.~~
 
-7. **Non-thread-safe ViewModel fields** — [MatchViewModel.kt ~L35](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L35): Ensure all mutations to `allMatches`, `sectionCache`, etc. happen on the main thread (e.g., within `withContext(Dispatchers.Main)` blocks after IO work, or guarded by `@MainThread` annotations).
+7. ✅ ~~**Non-thread-safe ViewModel fields** — All mutations occur within `viewModelScope.launch` (Dispatchers.Main), so mutations are sequentially safe. Noted with a comment; full architectural fix is tracked under item 23 (eliminate duplicate SectionData state).~~
 
-8. **`var` fields on `data class Match`** — [Match.kt ~L8](app/src/main/java/com/example/livetv/data/model/Match.kt#L8): Change `streamLinks` and `areLinksLoading` to `val`. All mutation sites already use `.copy()`, so this is a safe tightening.
+8. ✅ ~~**`var` fields on `data class Match`** — Changed `streamLinks` and `areLinksLoading` to `val`. All existing mutation sites already used `.copy()`.~~
 
-9. **Download stream leak** — [UpdateManager.kt ~L99](app/src/main/java/com/example/livetv/data/updater/UpdateManager.kt#L99): Wrap `FileOutputStream` and `InputStream` in `use {}` blocks so they are closed even on exception.
+9. ✅ ~~**Download stream leak** — Wrapped `FileOutputStream` and `InputStream` inside nested `use {}` blocks in `downloadUpdate()`. Both streams are now guaranteed to close on exception.~~
 
-10. **Double search filter** — [MatchViewModel.kt ~L559](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L559): Remove the second `.filter { searchQuery... }` call in `refreshVisibleMatches()` since `getFilteredMatches()` already applies it.
+10. ✅ ~~**Double search filter** — Removed the redundant `.filter { searchQuery... }` block in `refreshVisibleMatches()`; `getFilteredMatches()` already applies the search, sport, and league filters.~~
 
-11. **`release-on-tag.yml` builds unsigned APK** — [release-on-tag.yml ~L30](app/.github/workflows/release-on-tag.yml#L30): Either delete this redundant workflow (the `build-and-release.yml` already creates releases on push to master), or copy the keystore setup steps from it.
+11. ✅ ~~**`release-on-tag.yml` builds unsigned APK** — Deleted the file entirely via `git rm`. The `build-and-release.yml` workflow already handles signed releases on every push to master; the tag-triggered workflow was redundant and dangerous.~~
 
-12. **Relative URLs always resolve to `livetv.sx`** — [Scraper.kt ~L128](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L128): Extract the origin from the configured base URL (`Uri.parse(baseUrl).let { "${it.scheme}://${it.host}" }`) and use that for prefix expansion instead of the hardcoded string.
+12. ✅ ~~**Relative URLs always resolve to `livetv.sx`** — Added `baseOriginOf(url)` private helper to `Scraper`; both `scrapeMatchList` and `scrapeAllMatches` now derive the origin from the configured base URL and use it when resolving relative `/enx/event/...` links.~~
 
 ---
 

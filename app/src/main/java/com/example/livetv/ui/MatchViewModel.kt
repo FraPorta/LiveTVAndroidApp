@@ -63,6 +63,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     val isLoadingInitialList = mutableStateOf(false)
     val errorMessage = mutableStateOf<String?>(null)
     val isRefreshing = mutableStateOf(false)
+    // FIX #6: Guard against concurrent invocations of loadMoreMatches() that would
+    // append duplicate entries to visibleMatches.
+    val isLoadingMore = mutableStateOf(false)
 
     init {
         Log.d("ViewModel", "MatchViewModel initialized.")
@@ -175,58 +178,71 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadMoreMatches() {
+        if (isLoadingMore.value) return
+        isLoadingMore.value = true
         viewModelScope.launch {
-            val filteredMatches = getFilteredMatches()
-            Log.d("ViewModel", "loadMoreMatches called. Current visible: $currentVisibleCount / ${filteredMatches.size} (filtered from ${allMatches.size} total)")
-            
-            val nextLoadCount = if (currentVisibleCount == 0) INITIAL_LOAD_SIZE else LOAD_MORE_SIZE
-            val newVisibleCount = (currentVisibleCount + nextLoadCount).coerceAtMost(filteredMatches.size)
-
-            if (newVisibleCount > currentVisibleCount) {
-                // We have enough matches locally, use them
-                val nextBatch = filteredMatches.subList(currentVisibleCount, newVisibleCount)
-                Log.d("ViewModel", "Loading next batch of ${nextBatch.size} matches from local data.")
-                visibleMatches.value = visibleMatches.value + nextBatch
-                currentVisibleCount = newVisibleCount
-
-                // Fetch links for the new batch
-                fetchLinksForBatch(nextBatch)
-            } else if (!hasLoadedAllMatches && !hasActiveFilters()) {
-                // We don't have enough local matches and no filters are active,
-                // so fetch more from the repository
-                try {
-                    Log.d("ViewModel", "Fetching more matches from repository. Current total: $totalFetchedMatches")
-                    val moreMatches = repository.getMatchList(
-                        section = selectedSection.value,
-                        limit = LOAD_MORE_SIZE,
-                        offset = totalFetchedMatches
-                    )
-                    
-                    if (moreMatches.isNotEmpty()) {
-                        allMatches = allMatches + moreMatches
-                        totalFetchedMatches += moreMatches.size
-                        Log.d("ViewModel", "Fetched ${moreMatches.size} more matches. Total now: $totalFetchedMatches")
-                        
-                        // Update filter options with new matches
-                        updateFilterOptionsFromCurrentMatches()
-                        
-                        // Update cache with new data
-                        updateCurrentSectionCache()
-                        
-                        // Try loading more matches again with the expanded list
-                        loadMoreMatches()
-                    } else {
-                        hasLoadedAllMatches = true
-                        Log.d("ViewModel", "No more matches available from repository. Total fetched: $totalFetchedMatches")
-                        // Update cache to reflect that all matches are loaded
-                        updateCurrentSectionCache()
-                    }
-                } catch (e: Exception) {
-                    Log.e("ViewModel", "Error fetching more matches", e)
-                }
-            } else {
-                Log.d("ViewModel", "No more matches to load. HasLoadedAll: $hasLoadedAllMatches, HasFilters: ${hasActiveFilters()}")
+            try {
+                loadMoreMatchesInternal()
+            } finally {
+                isLoadingMore.value = false
             }
+        }
+    }
+
+    // FIX #6: Core logic extracted so the recursive "fetch next page" call bypasses the
+    // public guard (which would be set to true and block it) while still being protected
+    // against concurrent external calls via loadMoreMatches().
+    private suspend fun loadMoreMatchesInternal() {
+        val filteredMatches = getFilteredMatches()
+        Log.d("ViewModel", "loadMoreMatches called. Current visible: $currentVisibleCount / ${filteredMatches.size} (filtered from ${allMatches.size} total)")
+
+        val nextLoadCount = if (currentVisibleCount == 0) INITIAL_LOAD_SIZE else LOAD_MORE_SIZE
+        val newVisibleCount = (currentVisibleCount + nextLoadCount).coerceAtMost(filteredMatches.size)
+
+        if (newVisibleCount > currentVisibleCount) {
+            // We have enough matches locally, use them
+            val nextBatch = filteredMatches.subList(currentVisibleCount, newVisibleCount)
+            Log.d("ViewModel", "Loading next batch of ${nextBatch.size} matches from local data.")
+            visibleMatches.value = visibleMatches.value + nextBatch
+            currentVisibleCount = newVisibleCount
+
+            // Fetch links for the new batch
+            fetchLinksForBatch(nextBatch)
+        } else if (!hasLoadedAllMatches && !hasActiveFilters()) {
+            // We don't have enough local matches and no filters are active,
+            // so fetch more from the repository
+            try {
+                Log.d("ViewModel", "Fetching more matches from repository. Current total: $totalFetchedMatches")
+                val moreMatches = repository.getMatchList(
+                    section = selectedSection.value,
+                    limit = LOAD_MORE_SIZE,
+                    offset = totalFetchedMatches
+                )
+
+                if (moreMatches.isNotEmpty()) {
+                    allMatches = allMatches + moreMatches
+                    totalFetchedMatches += moreMatches.size
+                    Log.d("ViewModel", "Fetched ${moreMatches.size} more matches. Total now: $totalFetchedMatches")
+
+                    // Update filter options with new matches
+                    updateFilterOptionsFromCurrentMatches()
+
+                    // Update cache with new data
+                    updateCurrentSectionCache()
+
+                    // Continue loading — call internal directly to bypass the public guard
+                    loadMoreMatchesInternal()
+                } else {
+                    hasLoadedAllMatches = true
+                    Log.d("ViewModel", "No more matches available from repository. Total fetched: $totalFetchedMatches")
+                    // Update cache to reflect that all matches are loaded
+                    updateCurrentSectionCache()
+                }
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Error fetching more matches", e)
+            }
+        } else {
+            Log.d("ViewModel", "No more matches to load. HasLoadedAll: $hasLoadedAllMatches, HasFilters: ${hasActiveFilters()}")
         }
     }
 
@@ -590,18 +606,10 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
      * Refreshes the visible matches based on current filters and search query
      */
     private fun refreshVisibleMatches() {
+        // FIX #10: getFilteredMatches() already applies sport, league, AND search filters,
+        // so the redundant second filter block below it has been removed.
         val filteredMatches = getFilteredMatches()
-        
-        // If search is active and query is not empty, filter by search query
-        val searchedMatches = if (isSearchActive.value && searchQuery.value.isNotBlank()) {
-            filteredMatches.filter { match ->
-                val searchText = searchQuery.value.lowercase().trim()
-                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                matchText.contains(searchText)
-            }
-        } else {
-            filteredMatches
-        }
+        val searchedMatches = filteredMatches
         
         // Update visible matches - show all matching results when searching
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {

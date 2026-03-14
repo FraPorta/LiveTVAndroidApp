@@ -836,11 +836,11 @@ class Scraper(private val context: Context) {
     }
 
     private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {
+        // FIX #1: Use the platform's default trusted CA store — no custom SSLSocketFactory or
+        // hostnameVerifier. This prevents Man-in-the-Middle attacks on all OkHttp requests.
         val client = okhttp3.OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
-            .hostnameVerifier { _, _ -> true }
             .build()
 
         val request = okhttp3.Request.Builder()
@@ -868,21 +868,6 @@ class Scraper(private val context: Context) {
             val content = body.string()
             Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
             content
-        }
-    }
-
-    private fun createInsecureSslSocketFactory(): javax.net.ssl.SSLSocketFactory {
-        val trustAllManager = createTrustAllManager()
-        val sslContext = javax.net.ssl.SSLContext.getInstance("SSL")
-        sslContext.init(null, arrayOf(trustAllManager), java.security.SecureRandom())
-        return sslContext.socketFactory
-    }
-
-    private fun createTrustAllManager(): javax.net.ssl.X509TrustManager {
-        return object : javax.net.ssl.X509TrustManager {
-            override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
         }
     }
 
@@ -919,13 +904,17 @@ class Scraper(private val context: Context) {
                 webView.settings.domStorageEnabled = true
                 webView.settings.allowFileAccess = true
                 webView.settings.allowContentAccess = true
-                webView.settings.allowUniversalAccessFromFileURLs = true
+                // FIX #4: allowUniversalAccessFromFileURLs removed — it allowed JS to bypass
+                // the Same-Origin Policy and read arbitrary local files. Default (false) is secure.
                 webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                 webView.addJavascriptInterface(webAppInterface, "Android")
 
                 webView.webViewClient = object : WebViewClient() {
+                    // FIX #2: Cancel rather than proceed on SSL errors. Silently proceeding
+                    // allowed MITM attacks inside the WebView scraping session.
                     override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                        handler?.proceed() // Ignore SSL errors
+                        Log.e("ScraperWebView", "SSL error (cancelled): primaryError=${error?.primaryError}, url=${error?.url}")
+                        handler?.cancel()
                     }
 
                     override fun onPageFinished(view: WebView, url: String) {

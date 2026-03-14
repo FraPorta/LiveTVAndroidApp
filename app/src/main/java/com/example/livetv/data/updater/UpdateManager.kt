@@ -223,7 +223,9 @@ class UpdateManager(private val context: Context) {
     private fun signaturesMatch(apkFile: File): Boolean {
         val current = getInstalledSignatures()
         val downloaded = getArchiveSignatures(apkFile)
-        if (current.isEmpty() || downloaded.isEmpty()) return true // If we cannot determine, allow (legacy behavior)
+        // FIX #3: Treat an empty signature list as a mismatch, not a pass. Returning true
+        // when signatures couldn't be read allowed any APK to be installed silently.
+        if (current.isEmpty() || downloaded.isEmpty()) return false
         return current.any { it in downloaded }
     }
 

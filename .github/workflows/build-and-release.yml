@@ -83,6 +83,11 @@ jobs:
         exit 1
       fi
 
+      # FIX #5: Mask secrets before writing to any file so they never appear in logs.
+      echo "::add-mask::${{ secrets.RELEASE_STORE_PASSWORD }}"
+      echo "::add-mask::${{ secrets.RELEASE_KEY_ALIAS }}"
+      echo "::add-mask::${{ secrets.RELEASE_KEY_PASSWORD }}"
+
       # Set up gradle properties for release signing
       echo "" >> gradle.properties  # Ensure there's a newline
       echo "RELEASE_STORE_FILE=app/keystore/release.jks" >> gradle.properties

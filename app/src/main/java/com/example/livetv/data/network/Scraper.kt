@@ -33,6 +33,33 @@ class Scraper(private val context: Context) {
 
     private val urlPreferences = UrlPreferences(context)
 
+    // FIX #15: A single OkHttpClient is reused for all scraping calls so the connection pool,
+    // thread pool, and SSL session cache are shared. The hostname verifier reads the configured
+    // base URL at verification time, so it stays correct when the user changes the URL at runtime.
+    private val scrapingClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
+            .hostnameVerifier { hostname, _ ->
+                val allowedHost = try {
+                    java.net.URI(urlPreferences.getBaseUrl()).host ?: ""
+                } catch (_: Exception) { "" }
+                val allowed = allowedHost.isNotEmpty() &&
+                    (hostname == allowedHost || hostname.endsWith(".$allowedHost"))
+                if (!allowed) Log.w("Scraper", "SSL hostname rejected: $hostname (expected $allowedHost)")
+                allowed
+            }
+            .build()
+    }
+
+    // FIX #16: Cache the last successfully fetched HTML so that scrapeAllMatches() (called
+    // immediately after scrapeMatchList() during initial load) can reuse the same HTML without
+    // making a second HTTP request to an identical URL.
+    private data class HtmlCacheEntry(val url: String, val html: String, val fetchedAt: Long)
+    @Volatile private var htmlCache: HtmlCacheEntry? = null
+    private val HTML_CACHE_TTL_MS = 60_000L // 60 seconds
+
     /**
      * Scrapes the main page to get a list of upcoming matches, but doesn't
      * fetch the stream links yet. This is designed to be fast.
@@ -847,32 +874,18 @@ class Scraper(private val context: Context) {
         "${parsed.scheme}://${parsed.host}"
     } catch (_: Exception) { "https://livetv.sx" }
 
-    /**
-     * Creates an OkHttpClient that bypasses SSL certificate validation only for the configured
-     * scraping host. This is necessary because livetv.sx and mirrors may use certificates that
-     * Android's default CA store does not trust. The hostname verifier is intentionally scoped
-     * to the scraping domain — it does NOT apply to the update checker (UpdateManager) or any
-     * other OkHttpClient instance in the app.
-     */
-    private fun buildScrapingClient(allowedHost: String): okhttp3.OkHttpClient {
-        return okhttp3.OkHttpClient.Builder()
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
-            // Only bypass hostname verification for the configured scraping domain.
-            // Any other host (e.g., an injected MITM proxy) will still fail.
-            .hostnameVerifier { hostname, _ ->
-                val allowed = hostname == allowedHost || hostname.endsWith(".$allowedHost")
-                if (!allowed) Log.w("Scraper", "SSL hostname rejected: $hostname (expected $allowedHost)")
-                allowed
-            }
-            .build()
-    }
-
     private suspend fun fetchHtmlWithOkHttp(url: String): String = withContext(Dispatchers.IO) {
-        val host = java.net.URI(url).host ?: ""
-        val client = buildScrapingClient(host)
+        // FIX #16: Return cached HTML if the same URL was fetched within the TTL window.
+        // This prevents scrapeAllMatches() (background) from re-downloading a page that
+        // scrapeMatchList() (initial load) already fetched moments earlier.
+        htmlCache?.let { entry ->
+            if (entry.url == url && System.currentTimeMillis() - entry.fetchedAt < HTML_CACHE_TTL_MS) {
+                Log.d("Scraper", "HTML cache hit for $url (${entry.html.length} chars)")
+                return@withContext entry.html
+            }
+        }
 
+        // FIX #15: Reuse the single shared scrapingClient instead of building a new one per call.
         val request = okhttp3.Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -883,20 +896,20 @@ class Scraper(private val context: Context) {
             .header("Cache-Control", "no-cache")
             .build()
 
-        client.newCall(request).execute().use { response ->
+        scrapingClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 Log.e("Scraper", "HTTP error: ${response.code} - ${response.message}")
                 throw java.io.IOException("HTTP error: ${response.code}")
             }
-            
+
             val body = response.body
-            if (body == null) {
-                throw java.io.IOException("Empty response body")
-            }
-            
-            // OkHttp should automatically decompress gzipped content, but let's be explicit
+                ?: throw java.io.IOException("Empty response body")
+
             val content = body.string()
             Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
+            // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
+            // URL can skip the network round-trip entirely.
+            htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())
             content
         }
     }

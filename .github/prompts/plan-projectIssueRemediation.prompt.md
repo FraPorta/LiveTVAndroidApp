@@ -46,9 +46,9 @@ The project has 44 distinct issues across security, bugs, memory, performance, a
 
 ### High — Performance
 
-15. **New `OkHttpClient` per request** — [Scraper.kt ~L836](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L836): Create one `OkHttpClient` as a class-level property in `Scraper` (or a `companion object`) and reuse it across all calls.
+15. ✅ ~~**New `OkHttpClient` per request** — [Scraper.kt ~L836](app/src/main/java/com/example/livetv/data/network/Scraper.kt#L836): Deleted `buildScrapingClient(host)`. Added a `scrapingClient: OkHttpClient` lazy class-level property built once in `init`. Its hostname verifier closes over `urlPreferences` and reads `getBaseUrl()` dynamically at verification time, so it stays correct when the user changes the URL at runtime. All `fetchHtmlWithOkHttp` calls now reuse this single client.~~
 
-16. **Same URL fetched twice on load** — [MatchViewModel.kt ~L111](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L111): Pass the already-fetched full match list from `loadInitialMatchList()` into `startBackgroundScraping()` instead of having the background job re-fetch.
+16. ✅ ~~**Same URL fetched twice on load** — [MatchViewModel.kt ~L111](app/src/main/java/com/example/livetv/ui/MatchViewModel.kt#L111): Added a short-lived HTML cache (`HtmlCacheEntry`, TTL 60 s) in `Scraper`. `fetchHtmlWithOkHttp` writes to it on every successful fetch and returns the cached copy on cache-hits. Because `startBackgroundScraping()` calls `scrapeAllMatches()` (which calls `fetchHtmlWithOkHttp`) seconds after `loadInitialMatchList()` has already fetched the same URL, the second call resolves from cache with zero network overhead.~~
 
 ---
 

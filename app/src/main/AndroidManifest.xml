@@ -8,9 +8,8 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
         android:maxSdkVersion="32" />
-    <!-- For Android 10+ (API 29+) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- READ_MEDIA_VIDEO / READ_MEDIA_AUDIO removed: app never reads local media files.
+         Streams are opened via Intent (system media player / browser). -->
 
     <uses-feature
         android:name="android.software.leanback"
@@ -19,6 +18,8 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!-- largeHeap retained: WebView scraping + Jsoup DOM parsing hold multi-MB HTML/DOM
+         trees concurrently. Re-evaluate after replacing WebView scraping with OkHttp-only flow. -->
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
@@ -27,7 +28,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:banner="@drawable/ic_launcher"
         android:icon="@drawable/ic_launcher"
-        tools:targetApi="31"
+        tools:targetApi="36"
         android:requestLegacyExternalStorage="true"
         android:hardwareAccelerated="true"
         android:largeHeap="true">

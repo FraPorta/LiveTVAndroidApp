@@ -86,15 +86,15 @@ The project has 44 distinct issues across security, bugs, memory, performance, a
 
 ### Medium — Config & Manifest
 
-31. **`targetSdk 33`** — [app/build.gradle.kts](app/build.gradle.kts#L15): Bump to `targetSdk 34` (minimum for Play Store). Review any API 34 behavior changes (intent flags, exact alarms, photo picker).
+31. ✅ ~~**`targetSdk 33`** — [app/build.gradle.kts](app/build.gradle.kts#L15): Bumped `compileSdk` to `36` and `targetSdk` to `34`. Bumped `minSdk` from `21` → `23` (API 21–22 = Android 5.0/5.1, required by `tv-foundation:1.0.0-beta01` and effectively zero market share in 2026). Also bumped Kotlin from `1.9.0` → `1.9.25` (root + serialization plugin) and `kotlinCompilerExtensionVersion` from `1.5.1` → `1.5.15` to match.~~
 
-32. **All dependencies 2–3 years outdated** — [app/build.gradle.kts](app/build.gradle.kts#L91): Update `compose-bom` to `2024.09.00` or later, `core-ktx` to `1.13.x`, `lifecycle` to `2.8.x`, `okhttp` to `4.12.x`, and graduate TV libraries from alpha to stable.
+32. ✅ ~~**All dependencies 2–3 years outdated** — [app/build.gradle.kts](app/build.gradle.kts#L91): Updated: `compose-bom` → `2024.09.03`, `core-ktx` → `1.13.1`, `appcompat` → `1.7.0`, `material` → `1.12.0`, `lifecycle-*` → `2.8.7`, `activity-compose` → `1.9.3`, `okhttp`+`logging-interceptor` → `4.12.0`, `kotlinx-coroutines-*` → `1.9.0`, `kotlinx-serialization-json` → `1.7.3`, `jsoup` → `1.18.1`, `material-icons-*` → `1.7.3`, `tv-foundation` → `1.0.0-beta01` (no stable release exists), `tv-material` → `1.0.1` (stable). Both `compose-bom` entries (main + androidTest) updated. `accompanist-swiperefresh` bumped to `0.36.0` pending replacement (#30).~~
 
-33. **`network_security_config.xml` too narrow** — [network_security_config.xml](app/src/main/res/xml/network_security_config.xml): Add `127.0.0.1` (Acestream proxy) and any other known HTTP stream origins to the cleartext-permitted domains list.
+33. ✅ ~~**`network_security_config.xml` too narrow** — [network_security_config.xml](app/src/main/res/xml/network_security_config.xml): Added `127.0.0.1` (Acestream HTTP proxy) and `localhost` as cleartext-permitted domains alongside `livetv.sx`.~~
 
-34. **Unused manifest permissions** — [AndroidManifest.xml](app/src/main/AndroidManifest.xml#L12): Remove `READ_MEDIA_VIDEO` and `READ_MEDIA_AUDIO` if the app never accesses local media files.
+34. ✅ ~~**Unused manifest permissions** — [AndroidManifest.xml](app/src/main/AndroidManifest.xml#L12): Removed `READ_MEDIA_VIDEO` and `READ_MEDIA_AUDIO`; app never accesses local media — streams are opened via `Intent` to an external player.~~
 
-35. **`android:largeHeap="true"`** — [AndroidManifest.xml](app/src/main/AndroidManifest.xml#L33): Profile actual memory usage (especially during WebView scraping); fix any leaks found, then evaluate whether the flag is still needed.
+35. ✅ ~~**`android:largeHeap="true"`** — [AndroidManifest.xml](app/src/main/AndroidManifest.xml#L33): Flag retained with an explanatory XML comment. WebView scraping + Jsoup DOM parsing hold multi-MB HTML/DOM trees concurrently and triggered OOM without it. Revisit once WebView scraping is replaced with an OkHttp-only flow.~~
 
 ---
 

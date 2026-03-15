@@ -20,8 +20,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
@@ -96,8 +96,8 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     }
 
     // Pull-to-refresh state
-    val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
-    
+    val pullRefreshState = rememberPullToRefreshState()
+
     // Request focus for TV key handling
     LaunchedEffect(isCompactScreen) {
         if (!isCompactScreen) {
@@ -332,12 +332,14 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         }
                     }
                     if (isCompactScreen) {
-                        SwipeRefresh(
-                            state = swipeRefreshState,
+                        PullToRefreshBox(
+                            isRefreshing = isRefreshing,
                             onRefresh = { viewModel.refreshCurrentSection() },
-                            content = contentArea,
+                            state = pullRefreshState,
                             modifier = Modifier.weight(1f)
-                        )
+                        ) {
+                            contentArea()
+                        }
                     } else {
                         Box(
                             modifier = Modifier

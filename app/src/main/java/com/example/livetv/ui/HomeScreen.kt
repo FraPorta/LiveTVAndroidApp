@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Info
@@ -63,6 +64,19 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
 
     // Which match card is currently expanded (null = all collapsed)
     var expandedMatchUrl by remember { mutableStateOf<String?>(null) }
+
+    // Grid scroll state — used to scroll the expanded card into view
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(expandedMatchUrl) {
+        if (expandedMatchUrl != null) {
+            val idx = visibleMatches.indexOfFirst { it.detailPageUrl == expandedMatchUrl }
+            if (idx >= 0) {
+                // Anchor card top to the grid top so the TV focus auto-scroll
+                // for the stream buttons cannot push the card header off-screen
+                gridState.animateScrollToItem(index = idx, scrollOffset = 0)
+            }
+        }
+    }
 
     // Intercept the Activity back press when a card is expanded — collapse it instead of closing the app
     BackHandler(enabled = expandedMatchUrl != null) {
@@ -245,7 +259,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                             else -> {
                                 // Match grid - responsive layout (1 column mobile, 2 columns TV)
                                 LazyVerticalGrid(
-                                    columns = GridCells.Fixed(if (isCompactScreen) 1 else 2), // 1 column mobile, 2 columns TV
+                                    columns = GridCells.Fixed(if (isCompactScreen) 1 else 2),
+                                    state = gridState,
+                                    // Disable grid scroll while a card is expanded so TV focus
+                                    // movements inside the card don't scroll the grid and hide the header
+                                    userScrollEnabled = expandedMatchUrl == null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
@@ -305,10 +323,13 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         SwipeRefresh(
                             state = swipeRefreshState,
                             onRefresh = { viewModel.refreshCurrentSection() },
-                            content = contentArea
+                            content = contentArea,
+                            modifier = Modifier.weight(1f)
                         )
                     } else {
-                        contentArea()
+                        Box(modifier = Modifier.weight(1f)) {
+                            contentArea()
+                        }
                     }
         }
     }

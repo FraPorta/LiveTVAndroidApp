@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import androidx.compose.runtime.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
@@ -57,7 +58,18 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val configuration = LocalConfiguration.current
     val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
     val focusRequester = remember { FocusRequester() }
-    
+    // Returns focus to the collapsed card after Back is pressed
+    val collapsedCardFocusRequester = remember { FocusRequester() }
+
+    // Which match card is currently expanded (null = all collapsed)
+    var expandedMatchUrl by remember { mutableStateOf<String?>(null) }
+
+    // Intercept the Activity back press when a card is expanded — collapse it instead of closing the app
+    BackHandler(enabled = expandedMatchUrl != null) {
+        expandedMatchUrl = null
+        try { collapsedCardFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
     // Pull-to-refresh state
     val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
     
@@ -243,42 +255,18 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     // so Compose can correctly identity and diff items on recomposition
                                     // (index-based keys cause incorrect animations and unnecessary
                                     // recomposition when the list order changes).
-                                    itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { index, match ->
-                                        // For single column (mobile), no row-based height matching needed
-                                        // For two columns (TV), calculate adjacent card in the same row
-                                        val shouldUseUniformHeight = if (isCompactScreen) {
-                                            false // Mobile: each card can have its own height
-                                        } else {
-                                            // TV: Calculate if the adjacent card in the same row has both types
-                                            val isEvenColumn = index % 2 == 0
-                                            val adjacentIndex = if (isEvenColumn) index + 1 else index - 1
-                                            val adjacentMatch = if (adjacentIndex < visibleMatches.size) visibleMatches[adjacentIndex] else null
-                                            
-                                            // Check if either current or adjacent card has both types
-                                            val currentHasBothTypes = run {
-                                                val aceStreamLinks = match.streamLinks.filter { url -> 
-                                                    url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
-                                                }
-                                                val webStreamLinks = match.streamLinks.filter { url -> 
-                                                    !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
-                                                }
-                                                aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
-                                            }
-                                            
-                                            val adjacentHasBothTypes = adjacentMatch?.let { adjMatch ->
-                                                val aceStreamLinks = adjMatch.streamLinks.filter { url -> 
-                                                    url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
-                                                }
-                                                val webStreamLinks = adjMatch.streamLinks.filter { url -> 
-                                                    !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
-                                                }
-                                                aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
-                                            } ?: false
-                                            
-                                            currentHasBothTypes || adjacentHasBothTypes
-                                        }
-                                        
-                                        MatchItem(match = match, viewModel = viewModel, forceUniformHeight = shouldUseUniformHeight)
+                                    itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { _, match ->
+                                        MatchItem(
+                                            match = match,
+                                            viewModel = viewModel,
+                                            isExpanded = expandedMatchUrl == match.detailPageUrl,
+                                            onExpand = { expandedMatchUrl = match.detailPageUrl },
+                                            onCollapse = { expandedMatchUrl = null },
+                                            collapsedFocusRequester = if (expandedMatchUrl == match.detailPageUrl)
+                                                collapsedCardFocusRequester
+                                            else
+                                                null
+                                        )
                                     }
 
                                     // Only show "Load More" button when search is not active

@@ -17,6 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.MaterialTheme
+import com.example.livetv.ui.SpinningIcon
 import kotlin.math.roundToInt
 
 @Composable
@@ -60,8 +63,11 @@ fun UpdateDialog(
                     }
                     
                     is UpdateState.Checking -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(24.dp)
+                        SpinningIcon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Checking for updates",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp).padding(bottom = 16.dp)
                         )
                         Text(
                             text = "Checking for updates...",
@@ -186,8 +192,11 @@ fun UpdateDialog(
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else {
-                            CircularProgressIndicator(
-                                modifier = Modifier.padding(16.dp)
+                            SpinningIcon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Downloading",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(40.dp).padding(bottom = 8.dp)
                             )
                         }
                     }
@@ -233,8 +242,11 @@ fun UpdateDialog(
                     }
                     
                     is UpdateState.Installing -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(24.dp)
+                        SpinningIcon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Installing",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp).padding(bottom = 16.dp)
                         )
                         Text(
                             text = "Opening installer...",

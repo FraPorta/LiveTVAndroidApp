@@ -1,5 +1,10 @@
 package com.example.livetv.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,23 +14,27 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -51,10 +60,44 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val configuration = LocalConfiguration.current
     val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
     val focusRequester = remember { FocusRequester() }
-    
+    // Returns focus to the collapsed card after Back is pressed
+    val collapsedCardFocusRequester = remember { FocusRequester() }
+
+    // Which match card is currently expanded (null = all collapsed)
+    var expandedMatchUrl by remember { mutableStateOf<String?>(null) }
+
+    // Tracks whether focus is inside the grid area (TV only) — used to decide
+    // whether Back should move focus to the header or let the system close the app
+    var gridAreaHasFocus by remember { mutableStateOf(false) }
+
+    // Grid scroll state — used to scroll the expanded card into view
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(expandedMatchUrl) {
+        if (expandedMatchUrl != null) {
+            val idx = visibleMatches.indexOfFirst { it.detailPageUrl == expandedMatchUrl }
+            if (idx >= 0) {
+                // Anchor card top to the grid top so the TV focus auto-scroll
+                // for the stream buttons cannot push the card header off-screen
+                gridState.animateScrollToItem(index = idx, scrollOffset = 0)
+            }
+        }
+    }
+
+    // Intercept the Activity back press when a card is expanded — collapse it instead of closing the app
+    BackHandler(enabled = expandedMatchUrl != null) {
+        expandedMatchUrl = null
+        try { collapsedCardFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    // On TV, when no card is expanded but focus is in the grid, Back moves focus to the header
+    BackHandler(enabled = !isCompactScreen && expandedMatchUrl == null && gridAreaHasFocus) {
+        gridAreaHasFocus = false
+        try { focusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
     // Pull-to-refresh state
-    val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
-    
+    val pullRefreshState = rememberPullToRefreshState()
+
     // Request focus for TV key handling
     LaunchedEffect(isCompactScreen) {
         if (!isCompactScreen) {
@@ -176,11 +219,8 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         SearchBar(viewModel = viewModel)
                     }
                     
-                    // Content area - changes based on state with pull-to-refresh
-                    SwipeRefresh(
-                        state = swipeRefreshState,
-                        onRefresh = { viewModel.refreshCurrentSection() }
-                    ) {
+                    // Content area - pull-to-refresh only on phone; TV uses the Refresh button
+                    val contentArea: @Composable () -> Unit = {
                         when {
                             isLoading -> {
                                 // Loading state - only covers content area
@@ -189,7 +229,12 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    CircularProgressIndicator()
+                                    SpinningIcon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Loading",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(40.dp)
+                                    )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(text = "Fetching match list...")
                                 }
@@ -225,7 +270,12 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                             else -> {
                                 // Match grid - responsive layout (1 column mobile, 2 columns TV)
                                 LazyVerticalGrid(
-                                    columns = GridCells.Fixed(if (isCompactScreen) 1 else 2), // 1 column mobile, 2 columns TV
+                                    columns = GridCells.Fixed(if (isCompactScreen) 1 else 2),
+                                    state = gridState,
+                                    // On TV: disable grid scroll while a card is expanded so focus
+                                    // movements inside the card don't scroll the grid and hide the header.
+                                    // On mobile: always allow scrolling.
+                                    userScrollEnabled = isCompactScreen || expandedMatchUrl == null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
@@ -235,42 +285,18 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     // so Compose can correctly identity and diff items on recomposition
                                     // (index-based keys cause incorrect animations and unnecessary
                                     // recomposition when the list order changes).
-                                    itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { index, match ->
-                                        // For single column (mobile), no row-based height matching needed
-                                        // For two columns (TV), calculate adjacent card in the same row
-                                        val shouldUseUniformHeight = if (isCompactScreen) {
-                                            false // Mobile: each card can have its own height
-                                        } else {
-                                            // TV: Calculate if the adjacent card in the same row has both types
-                                            val isEvenColumn = index % 2 == 0
-                                            val adjacentIndex = if (isEvenColumn) index + 1 else index - 1
-                                            val adjacentMatch = if (adjacentIndex < visibleMatches.size) visibleMatches[adjacentIndex] else null
-                                            
-                                            // Check if either current or adjacent card has both types
-                                            val currentHasBothTypes = run {
-                                                val aceStreamLinks = match.streamLinks.filter { url -> 
-                                                    url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
-                                                }
-                                                val webStreamLinks = match.streamLinks.filter { url -> 
-                                                    !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
-                                                }
-                                                aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
-                                            }
-                                            
-                                            val adjacentHasBothTypes = adjacentMatch?.let { adjMatch ->
-                                                val aceStreamLinks = adjMatch.streamLinks.filter { url -> 
-                                                    url.startsWith("acestream://") || url.contains("/ace/getstream?id=") 
-                                                }
-                                                val webStreamLinks = adjMatch.streamLinks.filter { url -> 
-                                                    !url.startsWith("acestream://") && !url.contains("/ace/getstream?id=") 
-                                                }
-                                                aceStreamLinks.isNotEmpty() && webStreamLinks.isNotEmpty()
-                                            } ?: false
-                                            
-                                            currentHasBothTypes || adjacentHasBothTypes
-                                        }
-                                        
-                                        MatchItem(match = match, viewModel = viewModel, forceUniformHeight = shouldUseUniformHeight)
+                                    itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { _, match ->
+                                        MatchItem(
+                                            match = match,
+                                            viewModel = viewModel,
+                                            isExpanded = expandedMatchUrl == match.detailPageUrl,
+                                            onExpand = { expandedMatchUrl = match.detailPageUrl },
+                                            onCollapse = { expandedMatchUrl = null },
+                                            collapsedFocusRequester = if (expandedMatchUrl == match.detailPageUrl)
+                                                collapsedCardFocusRequester
+                                            else
+                                                null
+                                        )
                                     }
 
                                     // Only show "Load More" button when search is not active
@@ -305,6 +331,24 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                             }
                         }
                     }
+                    if (isCompactScreen) {
+                        PullToRefreshBox(
+                            isRefreshing = isRefreshing,
+                            onRefresh = { viewModel.refreshCurrentSection() },
+                            state = pullRefreshState,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            contentArea()
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { gridAreaHasFocus = it.hasFocus }
+                        ) {
+                            contentArea()
+                        }
+                    }
         }
     }
     
@@ -328,6 +372,17 @@ fun ActionButtons(
     showRefreshButton: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val isSpinning = isBackgroundScraping || isRefreshing
+    val infiniteTransition = rememberInfiniteTransition(label = "actionSpin")
+    val spinRotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing)
+        ),
+        label = "spinRotation"
+    )
+
     Box(
         modifier = modifier
             .background(
@@ -348,10 +403,13 @@ fun ActionButtons(
                 focusColor = MaterialTheme.colorScheme.primary
             ) {
                 if (isBackgroundScraping) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onTertiary
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Loading",
+                        tint = MaterialTheme.colorScheme.onTertiary,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .graphicsLayer { rotationZ = spinRotation }
                     )
                 } else {
                     Icon(
@@ -373,20 +431,18 @@ fun ActionButtons(
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     focusColor = MaterialTheme.colorScheme.tertiary
                 ) {
-                    if (isRefreshing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh matches",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = if (isRefreshing) "Refreshing" else "Refresh matches",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = if (isRefreshing) {
+                            Modifier
+                                .size(20.dp)
+                                .graphicsLayer { rotationZ = spinRotation }
+                        } else {
+                            Modifier.size(20.dp)
+                        }
+                    )
                 }
                 
                 Spacer(modifier = Modifier.width(8.dp))

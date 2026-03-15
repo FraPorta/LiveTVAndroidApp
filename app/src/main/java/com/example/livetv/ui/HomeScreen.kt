@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -65,6 +66,10 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     // Which match card is currently expanded (null = all collapsed)
     var expandedMatchUrl by remember { mutableStateOf<String?>(null) }
 
+    // Tracks whether focus is inside the grid area (TV only) — used to decide
+    // whether Back should move focus to the header or let the system close the app
+    var gridAreaHasFocus by remember { mutableStateOf(false) }
+
     // Grid scroll state — used to scroll the expanded card into view
     val gridState = rememberLazyGridState()
     LaunchedEffect(expandedMatchUrl) {
@@ -82,6 +87,12 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     BackHandler(enabled = expandedMatchUrl != null) {
         expandedMatchUrl = null
         try { collapsedCardFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    // On TV, when no card is expanded but focus is in the grid, Back moves focus to the header
+    BackHandler(enabled = !isCompactScreen && expandedMatchUrl == null && gridAreaHasFocus) {
+        gridAreaHasFocus = false
+        try { focusRequester.requestFocus() } catch (_: Exception) {}
     }
 
     // Pull-to-refresh state
@@ -328,7 +339,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                             modifier = Modifier.weight(1f)
                         )
                     } else {
-                        Box(modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { gridAreaHasFocus = it.hasFocus }
+                        ) {
                             contentArea()
                         }
                     }

@@ -261,9 +261,10 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 LazyVerticalGrid(
                                     columns = GridCells.Fixed(if (isCompactScreen) 1 else 2),
                                     state = gridState,
-                                    // Disable grid scroll while a card is expanded so TV focus
-                                    // movements inside the card don't scroll the grid and hide the header
-                                    userScrollEnabled = expandedMatchUrl == null,
+                                    // On TV: disable grid scroll while a card is expanded so focus
+                                    // movements inside the card don't scroll the grid and hide the header.
+                                    // On mobile: always allow scrolling.
+                                    userScrollEnabled = isCompactScreen || expandedMatchUrl == null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows

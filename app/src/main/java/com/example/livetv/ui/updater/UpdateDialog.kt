@@ -2,12 +2,12 @@ package com.example.livetv.ui.updater
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material3.MaterialTheme
 import com.example.livetv.ui.SpinningIcon
 import kotlin.math.roundToInt
@@ -41,8 +42,11 @@ fun UpdateDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            shape          = MaterialTheme.shapes.medium,
+            elevation      = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            colors         = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ),
         ) {
             Column(
                 modifier = Modifier
@@ -78,12 +82,12 @@ fun UpdateDialog(
                     
                     is UpdateState.UpToDate -> {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.CheckCircle,
+                            imageVector        = androidx.compose.material.icons.Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
+                            tint               = MaterialTheme.colorScheme.tertiary,
+                            modifier           = Modifier
                                 .size(48.dp)
-                                .padding(bottom = 16.dp)
+                                .padding(bottom = 16.dp),
                         )
                         Text(
                             text = "You're up to date!",
@@ -100,6 +104,14 @@ fun UpdateDialog(
                     }
                     
                     is UpdateState.Available -> {
+                        Icon(
+                            imageVector        = Icons.Rounded.NewReleases,
+                            contentDescription = null,
+                            tint               = MaterialTheme.colorScheme.primary,
+                            modifier           = Modifier
+                                .size(48.dp)
+                                .padding(bottom = 8.dp),
+                        )
                         Text(
                             text = "New Version Available",
                             style = MaterialTheme.typography.titleLarge,
@@ -180,10 +192,12 @@ fun UpdateDialog(
                         
                         if (downloadProgress != null) {
                             LinearProgressIndicator(
-                                progress = downloadProgress.percentage / 100f,
-                                modifier = Modifier
+                                progress  = { downloadProgress.percentage / 100f },
+                                modifier  = Modifier
                                     .fillMaxWidth()
-                                    .padding(bottom = 8.dp)
+                                    .padding(bottom = 8.dp),
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                strokeCap  = StrokeCap.Round,
                             )
                             Text(
                                 text = "${downloadProgress.percentage.roundToInt()}% (${formatFileSize(downloadProgress.downloaded)} / ${formatFileSize(downloadProgress.total)})",
@@ -203,12 +217,12 @@ fun UpdateDialog(
                     
                     is UpdateState.ReadyToInstall -> {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.Download,
+                            imageVector        = androidx.compose.material.icons.Icons.Default.Download,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
+                            tint               = MaterialTheme.colorScheme.primary,
+                            modifier           = Modifier
                                 .size(48.dp)
-                                .padding(bottom = 16.dp)
+                                .padding(bottom = 16.dp),
                         )
                         Text(
                             text = "Ready to Install",
@@ -257,12 +271,12 @@ fun UpdateDialog(
                     
                     is UpdateState.Error -> {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.Error,
+                            imageVector        = androidx.compose.material.icons.Icons.Default.Error,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier
+                            tint               = MaterialTheme.colorScheme.error,
+                            modifier           = Modifier
                                 .size(48.dp)
-                                .padding(bottom = 16.dp)
+                                .padding(bottom = 16.dp),
                         )
                         Text(
                             text = "Update Error",

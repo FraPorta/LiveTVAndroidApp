@@ -1,14 +1,11 @@
 package com.example.livetv.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
@@ -19,6 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,117 +40,111 @@ fun UrlConfigHeader(
     onAcestreamIpUpdate: (String) -> Unit,
     onResetAcestreamIp: () -> Unit,
     isCompact: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
     var editedUrl by remember { mutableStateOf(currentUrl) }
     var editedAcestreamIp by remember { mutableStateOf(currentAcestreamIp) }
 
-    // Update edited values when current values change
     LaunchedEffect(currentUrl, currentAcestreamIp) {
         editedUrl = currentUrl
         editedAcestreamIp = currentAcestreamIp
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(16.dp)
-            )
+    // ── Header surface ───────────────────────────────────────────────────────
+    Surface(
+        modifier      = modifier.fillMaxWidth(),
+        color         = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape         = MaterialTheme.shapes.medium,
+        tonalElevation = 2.dp,
     ) {
         Row(
-            modifier = Modifier
+            modifier              = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically,
         ) {
             if (isCompact) {
-                // Mobile layout - more compact vertical arrangement with padding before buttons
+                // ── Mobile layout ───────────────────────────────────────────
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 16.dp) // Add padding between text and buttons
+                        .padding(end = 16.dp),
                 ) {
-                    // Compact source display
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier          = Modifier.padding(top = 2.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Language,
+                            imageVector        = Icons.Default.Language,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                            modifier = Modifier.size(12.dp)
+                            tint               = MaterialTheme.colorScheme.primary,
+                            modifier           = Modifier.size(12.dp),
                         )
                         Text(
-                            text = currentUrl,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            text     = currentUrl,
+                            style    = MaterialTheme.typography.bodySmall,
+                            color    = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .padding(start = 6.dp)
-                                .weight(1f)
+                                .weight(1f),
                         )
                     }
-
-                    // Compact acestream IP display
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier          = Modifier.padding(top = 4.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Router,
+                            imageVector        = Icons.Default.Router,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                            modifier = Modifier.size(12.dp)
+                            tint               = MaterialTheme.colorScheme.primary,
+                            modifier           = Modifier.size(12.dp),
                         )
                         Text(
-                            text = "Acestream: $currentAcestreamIp",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(start = 6.dp)
+                            text     = "Acestream: $currentAcestreamIp",
+                            style    = MaterialTheme.typography.bodySmall,
+                            color    = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(start = 6.dp),
                         )
                     }
                 }
             } else {
-                // Tablet/TV layout - horizontal arrangement with texts close to each other
+                // ── Tablet / TV layout ──────────────────────────────────────
                 Column(modifier = Modifier.weight(1f)) {
-                    // Both texts in close horizontal arrangement
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier              = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        verticalAlignment = Alignment.Top
+                        verticalAlignment     = Alignment.Top,
                     ) {
-                        // Scraping Source
+                        // Scraping source
                         Column(modifier = Modifier.weight(1f)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 2.dp)
+                                modifier          = Modifier.padding(bottom = 2.dp),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Language,
+                                    imageVector        = Icons.Default.Language,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(16.dp)
+                                    tint               = MaterialTheme.colorScheme.primary,
+                                    modifier           = Modifier.size(16.dp),
                                 )
                                 Text(
-                                    text = "Scraping Source:",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                    modifier = Modifier.padding(start = 6.dp)
+                                    text     = "Scraping Source:",
+                                    style    = MaterialTheme.typography.bodySmall,
+                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 6.dp),
                                 )
                             }
                             Text(
-                                text = currentUrl,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                text     = currentUrl,
+                                style    = MaterialTheme.typography.bodyMedium,
+                                color    = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(start = 22.dp)
+                                modifier = Modifier.padding(start = 22.dp),
                             )
                         }
 
@@ -160,106 +152,106 @@ fun UrlConfigHeader(
                         Column(modifier = Modifier.weight(0.6f)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 2.dp)
+                                modifier          = Modifier.padding(bottom = 2.dp),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Router,
+                                    imageVector        = Icons.Default.Router,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(16.dp)
+                                    tint               = MaterialTheme.colorScheme.primary,
+                                    modifier           = Modifier.size(16.dp),
                                 )
                                 Text(
-                                    text = "Acestream IP:",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                    modifier = Modifier.padding(start = 6.dp)
+                                    text     = "Acestream IP:",
+                                    style    = MaterialTheme.typography.bodySmall,
+                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 6.dp),
                                 )
                             }
                             Text(
-                                text = currentAcestreamIp,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(start = 22.dp)
+                                text     = currentAcestreamIp,
+                                style    = MaterialTheme.typography.bodyMedium,
+                                color    = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(start = 22.dp),
                             )
                         }
                     }
                 }
             }
 
+            // ── Action buttons ──────────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Edit — primary action
                 FocusableButton(
-                    onClick = { showEditDialog = true },
-                    backgroundColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    focusColor = MaterialTheme.colorScheme.tertiary
+                    onClick          = { showEditDialog = true },
+                    backgroundColor  = MaterialTheme.colorScheme.primary,
+                    contentColor     = MaterialTheme.colorScheme.onPrimary,
+                    focusColor       = MaterialTheme.colorScheme.tertiary,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Edit,
+                        imageVector        = Icons.Default.Edit,
                         contentDescription = "Edit Configuration",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(20.dp)
+                        tint               = MaterialTheme.colorScheme.onPrimary,
+                        modifier           = Modifier.size(20.dp),
                     )
                 }
 
+                // Reset — secondary / destructive action (no alpha hacks)
                 FocusableButton(
-                    onClick = onResetUrl,
-                    backgroundColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                    contentColor = MaterialTheme.colorScheme.onSecondary,
-                    focusColor = MaterialTheme.colorScheme.primary
+                    onClick          = onResetUrl,
+                    backgroundColor  = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor     = MaterialTheme.colorScheme.onSecondaryContainer,
+                    focusColor       = MaterialTheme.colorScheme.primary,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Check,
+                        imageVector        = Icons.Default.Check,
                         contentDescription = "Reset to Default",
-                        tint = MaterialTheme.colorScheme.onSecondary,
-                        modifier = Modifier.size(20.dp)
+                        tint               = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier           = Modifier.size(20.dp),
                     )
                 }
             }
         }
     }
 
-    // Edit URL Dialog
+    // ── Edit dialog ──────────────────────────────────────────────────────────
     if (showEditDialog) {
         AlertDialog(
             onDismissRequest = {
-                showEditDialog = false
-                editedUrl = currentUrl // Reset to current URL if cancelled
-                editedAcestreamIp = currentAcestreamIp // Reset to current IP if cancelled
+                showEditDialog    = false
+                editedUrl         = currentUrl
+                editedAcestreamIp = currentAcestreamIp
             },
             title = { Text("Configuration") },
-            text = {
+            text  = {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Base URL section
                     Column {
                         Text(
                             "Base URL for scraping match data:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            style    = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
                         )
                         OutlinedTextField(
-                            value = editedUrl,
+                            value         = editedUrl,
                             onValueChange = { editedUrl = it },
-                            label = { Text("Base URL") },
-                            placeholder = { Text("https://livetv.sx/enx/allupcomingsports/1/") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            label         = { Text("Base URL") },
+                            placeholder   = { Text("https://livetv.sx/enx/allupcomingsports/1/") },
+                            singleLine    = true,
+                            modifier      = Modifier.fillMaxWidth(),
                         )
                     }
-
-                    // Acestream IP section
                     Column {
                         Text(
                             "Acestream engine IP address:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            style    = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
                         )
                         OutlinedTextField(
-                            value = editedAcestreamIp,
+                            value         = editedAcestreamIp,
                             onValueChange = { editedAcestreamIp = it },
-                            label = { Text("Acestream IP") },
-                            placeholder = { Text("127.0.0.1") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            label         = { Text("Acestream IP") },
+                            placeholder   = { Text("127.0.0.1") },
+                            singleLine    = true,
+                            modifier      = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -267,32 +259,23 @@ fun UrlConfigHeader(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        var hasChanges = false
-                        if (editedUrl.isNotBlank() && editedUrl != currentUrl) {
+                        if (editedUrl.isNotBlank() && editedUrl != currentUrl)
                             onUrlUpdate(editedUrl)
-                            hasChanges = true
-                        }
-                        if (editedAcestreamIp.isNotBlank() && editedAcestreamIp != currentAcestreamIp) {
+                        if (editedAcestreamIp.isNotBlank() && editedAcestreamIp != currentAcestreamIp)
                             onAcestreamIpUpdate(editedAcestreamIp)
-                            hasChanges = true
-                        }
                         showEditDialog = false
-                    }
-                ) {
-                    Text("Update")
-                }
+                    },
+                ) { Text("Update") }
             },
             dismissButton = {
                 TextButton(
                     onClick = {
-                        showEditDialog = false
-                        editedUrl = currentUrl
+                        showEditDialog    = false
+                        editedUrl         = currentUrl
                         editedAcestreamIp = currentAcestreamIp
-                    }
-                ) {
-                    Text("Cancel")
-                }
-            }
+                    },
+                ) { Text("Cancel") }
+            },
         )
     }
 }

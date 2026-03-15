@@ -1,11 +1,9 @@
 package com.example.livetv.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
@@ -13,9 +11,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,60 +26,77 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+/**
+ * Overlay search bar shown when the user activates search.
+ *
+ * Uses a [Surface] with [MaterialTheme.colorScheme.surfaceContainerHigh] and
+ * [MaterialTheme.shapes.medium] corners — matching the M3 DockedSearchBar
+ * visual spec — rather than a raw background [Row]. Auto-focuses the text
+ * field on first composition so TV remote users can start typing immediately.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchBar(
     viewModel: MatchViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val searchQuery by viewModel.searchQuery
-    val searchFocusRequester = remember { FocusRequester() }
+    val searchQuery  by viewModel.searchQuery
+    val focusRequester = remember { FocusRequester() }
 
-    // Auto-focus when search becomes active
-    LaunchedEffect(Unit) {
-        searchFocusRequester.requestFocus()
-    }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    // Active search bar - only shown when search is active
-    Row(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 8.dp)
-            .background(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(16.dp)
-            )
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        color         = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape         = MaterialTheme.shapes.medium,
+        tonalElevation = 0.dp,
     ) {
-        Icon(
-            imageVector = Icons.Default.Search,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(start = 8.dp)
-        )
-
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.updateSearchQuery(it) },
-            placeholder = { Text("Search teams, players, leagues...") },
-            modifier = Modifier
-                .weight(1f)
-                .focusRequester(searchFocusRequester),
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = Color.Transparent,
-                focusedBorderColor = Color.Transparent
-            )
-        )
-
-        IconButton(onClick = { viewModel.deactivateSearch() }) {
+        Row(
+            modifier            = Modifier.fillMaxWidth(),
+            verticalAlignment   = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Close search",
-                tint = MaterialTheme.colorScheme.onSurface
+                imageVector        = Icons.Default.Search,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier           = Modifier.padding(start = 16.dp),
             )
+
+            TextField(
+                value             = searchQuery,
+                onValueChange     = { viewModel.updateSearchQuery(it) },
+                placeholder       = {
+                    Text(
+                        "Search teams, leagues…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                modifier          = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                singleLine        = true,
+                textStyle         = MaterialTheme.typography.bodyMedium,
+                colors            = TextFieldDefaults.colors(
+                    // Blend into the Surface so it looks like one unified bar
+                    focusedContainerColor   = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor   = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor  = Color.Transparent,
+                ),
+            )
+
+            IconButton(onClick = { viewModel.deactivateSearch() }) {
+                Icon(
+                    imageVector        = Icons.Default.Close,
+                    contentDescription = "Close search",
+                    tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

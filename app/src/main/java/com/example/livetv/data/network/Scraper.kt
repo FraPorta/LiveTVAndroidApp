@@ -71,6 +71,18 @@ class Scraper(private val context: Context) {
         // FIX #27: Single source of truth for football-related keywords.
         // Previously hard-coded twice (in scrapeMatchList and scrapeAllMatches), now referenced
         // from both call sites so a future keyword addition only needs one change.
+        /**
+         * Detects a date-like substring in a table row's text (e.g. "16 March 2026", "March 16").
+         * Used by [findDateForRow] to identify schedule-header rows.
+         */
+        private val DATE_HEADER_REGEX = Regex("""
+            \b\d{1,2}\s+[A-Za-z]{3,9}(?:\s+\d{4})?\b   # 16 March | 16 March 2026
+            |\b[A-Za-z]{3,9}\s+\d{1,2}(?:,\s*\d{4})?\b  # March 16 | March 16, 2026
+        """.trimIndent(), setOf(RegexOption.COMMENTS, RegexOption.IGNORE_CASE))
+        private val RELATIVE_DATE_REGEX = Regex("""
+            \b(?:today|tomorrow|yesterday)\b
+        """.trimIndent(), setOf(RegexOption.COMMENTS, RegexOption.IGNORE_CASE))
+
         val FOOTBALL_KEYWORDS: Set<String> = setOf(
             "football", "soccer", "premier", "liga", "bundesliga", "serie a",
             "ligue", "champions league", "europa league", "uefa", "fifa", "world cup"
@@ -267,8 +279,21 @@ class Scraper(private val context: Context) {
                 Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league' Country='$country'")
             }
 
+            // The upcoming-section rows carry a <span class="evdesc">16 March at 19:30</span>.
+            // Extract date and (if time is still blank) time from that span before falling back
+            // to the DOM-sibling header walk, which is a no-op on this site's structure.
+            val evdescRaw = row.select(".evdesc").text().trim()
+            val dtMatch = Regex("""\b(\d{1,2}\s+[A-Za-z]{3,9})\s+at\s+(\d{1,2}:\d{2})\b""", RegexOption.IGNORE_CASE).find(evdescRaw)
+            val date: String
+            if (dtMatch != null) {
+                date = normalizeDateHeader(dtMatch.groupValues[1])
+                if (time.isBlank()) time = dtMatch.groupValues[2]
+            } else {
+                date = findDateForRow(row) // fallback: walk sibling <tr> headers
+            }
+
             if (teams.isNotBlank() && teams.length > 3) {
-                matches.add(Match(time, teams, competition, sport, league, detailPageUrl, country = country))
+                matches.add(Match(time, date, teams, competition, sport, league, detailPageUrl, country = country))
             } else if (BuildConfig.DEBUG) {
                 Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
             }
@@ -437,6 +462,67 @@ class Scraper(private val context: Context) {
         }
 
         return Triple(sport, league, country)
+    }
+
+    /**
+     * Walks backwards through sibling `<tr>` elements to find the nearest date-header row
+     * (e.g. a single-cell row containing "16 March 2026" or "Today") and returns a compact
+     * display string like "16 Mar" or "Today". Returns an empty string when no header is found.
+     */
+    private fun findDateForRow(row: org.jsoup.nodes.Element): String {
+        var sibling = row.previousElementSibling()
+        while (sibling != null) {
+            if (sibling.tagName() == "tr") {
+                val text = sibling.text().trim()
+                if (text.isNotBlank() && isDateHeaderRow(sibling, text)) {
+                    return normalizeDateHeader(text)
+                }
+            }
+            sibling = sibling.previousElementSibling()
+        }
+        return ""
+    }
+
+    /** Returns true when [row] looks like a schedule date-header row (not a match row). */
+    private fun isDateHeaderRow(row: org.jsoup.nodes.Element, text: String): Boolean {
+        if (text.length > 80) return false // match rows are longer
+        if (row.select("a[href*='event']").isNotEmpty()) return false // it's a match row
+        val cls = row.attr("class").lowercase()
+        val looksLikeDateClass = cls.contains("date") || cls.contains("header") || cls.contains("category")
+        val hasDateText = DATE_HEADER_REGEX.containsMatchIn(text) || RELATIVE_DATE_REGEX.containsMatchIn(text)
+        if (!hasDateText) return false
+        // Either a date-specific CSS class, or a single/spanning cell (typical for header rows)
+        val cells = row.select("td")
+        val isSingleOrSpanned = cells.size == 1 || cells.any { it.attr("colspan").isNotEmpty() }
+        return looksLikeDateClass || isSingleOrSpanned
+    }
+
+    /** Converts a raw date-header string into a compact display form like "16 Mar" or "Today". */
+    private fun normalizeDateHeader(raw: String): String {
+        val text = raw.trim()
+        if (RELATIVE_DATE_REGEX.containsMatchIn(text)) {
+            return when {
+                text.contains("today", ignoreCase = true)     -> "Today"
+                text.contains("tomorrow", ignoreCase = true)  -> "Tomorrow"
+                text.contains("yesterday", ignoreCase = true) -> "Yesterday"
+                else -> text
+            }
+        }
+        // Extract "DD Month" (ignoring year and day-of-week prefix)
+        val dayMonth = Regex("""\b(\d{1,2})\s+([A-Za-z]{3,9})(?:\s+\d{4})?\b""").find(text)
+        if (dayMonth != null) {
+            val day = dayMonth.groupValues[1]
+            val month = dayMonth.groupValues[2].take(3).replaceFirstChar { it.uppercaseChar() }
+            return "$day $month"
+        }
+        // "Month DD" US format
+        val monthDay = Regex("""\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,\s*\d{4})?\b""").find(text)
+        if (monthDay != null) {
+            val month = monthDay.groupValues[1].take(3).replaceFirstChar { it.uppercaseChar() }
+            val day = monthDay.groupValues[2]
+            return "$day $month"
+        }
+        return text
     }
 
     /**

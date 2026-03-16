@@ -94,8 +94,11 @@ fun MatchItem(
         }
     }
 
-    // Build the time display string (used in both layouts)
-    val timeDisplay = if (match.time.isNotBlank()) "⏰ ${match.time}" else ""
+    // Build the time display string (date + time, used in both layouts)
+    val timeDisplay = listOfNotNull(
+        match.date.takeIf { it.isNotBlank() },
+        match.time.takeIf { it.isNotBlank() }?.let { "⏰ $it" }
+    ).joinToString("  ·  ")
 
     if (!isExpanded) {
         // ── Collapsed card ────────────────────────────────────────────────

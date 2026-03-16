@@ -2,6 +2,7 @@ package com.example.livetv.data.model
 
 data class Match(
     val time: String,
+    val date: String = "",  // Date header from the schedule page, e.g. "16 Mar" or "Today"
     val teams: String,
     val competition: String,
     val sport: String,         // The sport type (Football, Basketball, etc.)

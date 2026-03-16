@@ -408,8 +408,8 @@ class Scraper(private val context: Context) {
             """\w+\s+\d{1,2}\s+at\s*""", // "September 14 at"
             """\d{1,2}\s+\w+\s+at\s*""", // "14 September at"
             """at\s+\d{1,2}:\d{2}""", // "at 15:30"
-            """live|today|tomorrow|now""",
-            """GMT|UTC|CET|EST|PST""",
+            """\blive\b|\btoday\b|\btomorrow\b|\bnow\b""",
+            """\bGMT\b|\bUTC\b|\bCET\b|\bEST\b|\bPST\b""",
             """\s+0:\d+\s*$""" // Remove scores like "0:0" at the end
         )
         

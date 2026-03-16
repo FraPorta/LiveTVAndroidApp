@@ -1,5 +1,6 @@
 package com.example.livetv.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Star
@@ -19,8 +21,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.livetv.data.model.TeamEntry
@@ -56,8 +63,17 @@ fun SearchSuggestions(
         // ── Team chips ──────────────────────────────────────────────────────────────
         items(suggestions, key = { "team:${it.name}" }) { entry ->
             Row(verticalAlignment = Alignment.CenterVertically) {
+                var chipFocused by remember { mutableStateOf(false) }
+                val focusBorderColor = MaterialTheme.colorScheme.primary
                 SuggestionChip(
-                    onClick = { onSuggestionTap(entry) },
+                    onClick  = { onSuggestionTap(entry) },
+                    modifier = Modifier
+                        .onFocusChanged { chipFocused = it.isFocused }
+                        .border(
+                            width = if (chipFocused) 2.dp else 0.dp,
+                            color = if (chipFocused) focusBorderColor else Color.Transparent,
+                            shape = RoundedCornerShape(50),
+                        ),
                     label   = {
                         Text(
                             text     = entry.name,
@@ -92,8 +108,17 @@ fun SearchSuggestions(
         // ── League chips ─────────────────────────────────────────────────────────
         items(leagueSuggestions, key = { "league:$it" }) { league ->
             Row(verticalAlignment = Alignment.CenterVertically) {
+                var chipFocused by remember { mutableStateOf(false) }
+                val focusBorderColor = MaterialTheme.colorScheme.primary
                 SuggestionChip(
-                    onClick = { onLeagueTap(league) },
+                    onClick  = { onLeagueTap(league) },
+                    modifier = Modifier
+                        .onFocusChanged { chipFocused = it.isFocused }
+                        .border(
+                            width = if (chipFocused) 2.dp else 0.dp,
+                            color = if (chipFocused) focusBorderColor else Color.Transparent,
+                            shape = RoundedCornerShape(50),
+                        ),
                     label   = {
                         Text(
                             text     = league,

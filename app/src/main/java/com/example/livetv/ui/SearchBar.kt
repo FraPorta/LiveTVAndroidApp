@@ -21,9 +21,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 
 /**
@@ -42,6 +49,7 @@ fun SearchBar(
 ) {
     val searchQuery  by viewModel.searchQuery
     val focusRequester = remember { FocusRequester() }
+    val focusManager  = LocalFocusManager.current
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
@@ -77,7 +85,14 @@ fun SearchBar(
                 },
                 modifier          = Modifier
                     .weight(1f)
-                    .focusRequester(focusRequester),
+                    .focusRequester(focusRequester)
+                    .onKeyEvent { ev ->
+                        // D-pad DOWN: move focus into the suggestions row below
+                        if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionDown) {
+                            focusManager.moveFocus(FocusDirection.Down)
+                            true
+                        } else false
+                    },
                 singleLine        = true,
                 textStyle         = MaterialTheme.typography.bodyMedium,
                 colors            = TextFieldDefaults.colors(

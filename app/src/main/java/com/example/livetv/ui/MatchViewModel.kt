@@ -5,7 +5,11 @@ import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.livetv.data.local.FavouritesPreferences
+import com.example.livetv.data.local.TeamDatabase
+import com.example.livetv.data.local.TeamMatcher
 import com.example.livetv.data.model.Match
+import com.example.livetv.data.model.TeamEntry
 import com.example.livetv.data.repository.MatchRepository
 import com.example.livetv.data.model.ScrapingSection
 import kotlinx.coroutines.launch
@@ -16,6 +20,7 @@ const val LOAD_MORE_SIZE = 10
 class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MatchRepository(application)
+    private val favouritesPrefs = FavouritesPreferences(application)
 
     // Section-based caching for matches and state
     private data class SectionData(
@@ -65,6 +70,14 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     val isSearchActive = mutableStateOf(false)
     val isBackgroundScraping = mutableStateOf(false)
 
+    // ── Favourites state ──────────────────────────────────────────────────────
+    val favouriteTeams   = mutableStateOf<Set<String>>(emptySet())
+    val favouriteLeagues = mutableStateOf<Set<String>>(emptySet())
+
+    // ── Team DB search suggestions ────────────────────────────────────────────
+    /** Populated while search is active and query is non-blank. */
+    val teamSuggestions = mutableStateOf<List<TeamEntry>>(emptyList())
+
     private var currentVisibleCount: Int
         get() = currentSectionData().currentVisibleCount
         set(value) { sectionCache[selectedSection.value] = currentSectionData().copy(currentVisibleCount = value) }
@@ -78,6 +91,11 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         Log.d("ViewModel", "MatchViewModel initialized.")
+        // Initialise the offline team DB from bundled assets
+        TeamDatabase.init(application.assets)
+        // Load persisted favourites
+        favouriteTeams.value   = favouritesPrefs.getFavouriteTeams()
+        favouriteLeagues.value = favouritesPrefs.getFavouriteLeagues()
         loadInitialMatchList()
     }
     
@@ -298,6 +316,11 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                                match.league == selectedLeague.value
             
             sportMatches && leagueMatches
+        }
+
+        // When in Favourites section, restrict to matches involving a favourite
+        if (selectedSection.value == ScrapingSection.FAVOURITES) {
+            filtered = filtered.filter { isFavouriteMatch(it) }
         }
         
         // Apply search filter if active
@@ -551,6 +574,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     fun deactivateSearch() {
         isSearchActive.value = false
         searchQuery.value = ""
+        teamSuggestions.value = emptyList()
         refreshVisibleMatches()
         Log.d("ViewModel", "Search deactivated")
     }
@@ -560,6 +584,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun updateSearchQuery(query: String) {
         searchQuery.value = query
+        // Update team DB suggestions in real-time
+        teamSuggestions.value = if (query.isNotBlank()) TeamMatcher.teamsMatchingQuery(query)
+                                else emptyList()
         refreshVisibleMatches()
         Log.d("ViewModel", "Search query updated: '$query'")
     }
@@ -606,5 +633,64 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         
         Log.d("ViewModel", "Visible matches refreshed: ${visibleMatches.value.size} (from ${searchedMatches.size} filtered)")
     }
-    
+
+    // ── Favourites API ────────────────────────────────────────────────────────
+
+    /** Toggles a team in/out of favourites and refreshes state. */
+    fun toggleFavouriteTeam(teamName: String) {
+        if (favouritesPrefs.isTeamFavourite(teamName)) {
+            favouritesPrefs.removeTeam(teamName)
+        } else {
+            favouritesPrefs.addTeam(teamName)
+        }
+        favouriteTeams.value = favouritesPrefs.getFavouriteTeams()
+        // If we're in the FAVOURITES section, the visible list may have changed
+        if (selectedSection.value == ScrapingSection.FAVOURITES) refreshVisibleMatches()
+        Log.d("ViewModel", "Toggled favourite team '$teamName'. Now: ${favouriteTeams.value}")
+    }
+
+    /** Toggles a league in/out of favourites and refreshes state. */
+    fun toggleFavouriteLeague(leagueName: String) {
+        if (favouritesPrefs.isLeagueFavourite(leagueName)) {
+            favouritesPrefs.removeLeague(leagueName)
+        } else {
+            favouritesPrefs.addLeague(leagueName)
+        }
+        favouriteLeagues.value = favouritesPrefs.getFavouriteLeagues()
+        if (selectedSection.value == ScrapingSection.FAVOURITES) refreshVisibleMatches()
+        Log.d("ViewModel", "Toggled favourite league '$leagueName'. Now: ${favouriteLeagues.value}")
+    }
+
+    /**
+     * Returns true when [match] involves at least one favourite team or belongs to
+     * a favourite league.
+     *
+     * Team matching uses [TeamMatcher] to bridge scraped names to canonical DB names.
+     */
+    fun isFavouriteMatch(match: Match): Boolean {
+        val favTeams   = favouriteTeams.value
+        val favLeagues = favouriteLeagues.value
+        if (favTeams.isEmpty() && favLeagues.isEmpty()) return false
+
+        // Check league first (cheaper)
+        if (favLeagues.isNotEmpty()) {
+            val entry = com.example.livetv.data.local.TeamMatcher.lookupTeam(match.league)
+            if (entry != null && entry.league in favLeagues) return true
+            if (match.league in favLeagues) return true
+        }
+
+        // Check each team in the "Home vs Away" string
+        if (favTeams.isNotEmpty()) {
+            val parts = match.teams.split(" vs ", " v ", " - ", limit = 2)
+            for (part in parts) {
+                val entry = com.example.livetv.data.local.TeamMatcher.lookupTeam(part.trim())
+                if (entry != null && entry.name in favTeams) return true
+                if (part.trim() in favTeams) return true
+            }
+        }
+        return false
+    }
+
+    fun isTeamFavourite(teamName: String): Boolean = teamName in favouriteTeams.value
+    fun isLeagueFavourite(leagueName: String): Boolean = leagueName in favouriteLeagues.value
 }

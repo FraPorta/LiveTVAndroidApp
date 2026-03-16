@@ -218,6 +218,17 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                     if (viewModel.isSearchActive.value) {
                         SearchBar(viewModel = viewModel)
                     }
+
+                    // Team DB suggestion chips \u2014 shown above the grid while search is active
+                    val teamSuggestions by viewModel.teamSuggestions
+                    if (viewModel.isSearchActive.value && teamSuggestions.isNotEmpty()) {
+                        SearchSuggestions(
+                            suggestions    = teamSuggestions,
+                            onSuggestionTap = { entry ->
+                                viewModel.updateSearchQuery(entry.name)
+                            },
+                        )
+                    }
                     
                     // Content area - pull-to-refresh only on phone; TV uses the Refresh button
                     val contentArea: @Composable () -> Unit = {

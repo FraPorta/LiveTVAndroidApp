@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,6 +38,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,10 +52,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.livetv.data.local.TeamMatcher
 import com.example.livetv.data.model.Match
 import com.example.livetv.ui.theme.BadgeTextStyle
 
@@ -148,6 +153,27 @@ fun MatchItem(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        // Team logos — only rendered when the DB has an entry for at least one team
+                        val teamLogoData = remember(match.teams) {
+                            val parts = match.teams.split(" vs ", " v ", limit = 2)
+                            if (parts.size == 2) {
+                                val t1 = parts[0].trim()
+                                val t2 = parts[1].trim()
+                                if (TeamMatcher.lookupTeam(t1) != null || TeamMatcher.lookupTeam(t2) != null)
+                                    Pair(t1, t2)
+                                else null
+                            } else null
+                        }
+                        if (teamLogoData != null) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 3.dp)
+                            ) {
+                                TeamLogo(teamLogoData.first,  size = 20.dp)
+                                TeamLogo(teamLogoData.second, size = 20.dp)
+                            }
+                        }
                         Text(
                             text = match.teams.ifBlank { "Teams TBD" },
                             style = MaterialTheme.typography.titleSmall,
@@ -271,7 +297,65 @@ fun MatchItem(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // ── Favourites row (team stars + league star) ─────────────────────────────
+                val expandedParts = remember(match.teams) {
+                    match.teams.split(" vs ", " v ", limit = 2).map { it.trim() }.filter { it.isNotBlank() }
+                }
+                val favTeams by viewModel.favouriteTeams
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    expandedParts.forEach { rawTeam ->
+                        val canonical = remember(rawTeam) {
+                            TeamMatcher.lookupTeam(rawTeam)?.name ?: rawTeam
+                        }
+                        val isFav = canonical in favTeams
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            TeamLogo(rawTeam, size = 18.dp)
+                            IconButton(
+                                onClick = { viewModel.toggleFavouriteTeam(canonical) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isFav) Icons.Filled.Star else Icons.Outlined.Star,
+                                    contentDescription = if (isFav) "Unfavourite $canonical" else "Favourite $canonical",
+                                    tint = if (isFav) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    // League star (if league is non-blank)
+                    if (match.league.isNotBlank()) {
+                        val favLeagues by viewModel.favouriteLeagues
+                        val isLeagueFav = match.league in favLeagues
+                        Spacer(modifier = Modifier.weight(1f))
+                        IconButton(
+                            onClick = { viewModel.toggleFavouriteLeague(match.league) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isLeagueFav) Icons.Filled.Star else Icons.Outlined.Star,
+                                contentDescription = if (isLeagueFav) "Unfavourite ${match.league}" else "Favourite ${match.league}",
+                                tint = if (isLeagueFav) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Text(
+                            text = match.league,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
                 HorizontalDivider(
                     modifier  = Modifier.padding(bottom = 8.dp),
                     thickness = 1.dp,

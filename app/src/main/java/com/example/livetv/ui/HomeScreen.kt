@@ -219,14 +219,20 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                         SearchBar(viewModel = viewModel)
                     }
 
-                    // Team DB suggestion chips \u2014 shown above the grid while search is active
-                    val teamSuggestions by viewModel.teamSuggestions
-                    if (viewModel.isSearchActive.value && teamSuggestions.isNotEmpty()) {
+                    // Team + league suggestion chips — shown above the grid while search is active
+                    val teamSuggestions   by viewModel.teamSuggestions
+                    val leagueSuggestions by viewModel.leagueSuggestions
+                    if (viewModel.isSearchActive.value &&
+                        (teamSuggestions.isNotEmpty() || leagueSuggestions.isNotEmpty())) {
                         SearchSuggestions(
-                            suggestions    = teamSuggestions,
-                            onSuggestionTap = { entry ->
-                                viewModel.updateSearchQuery(entry.name)
-                            },
+                            suggestions             = teamSuggestions,
+                            leagueSuggestions       = leagueSuggestions,
+                            favouriteTeams          = viewModel.favouriteTeams.value,
+                            favouriteLeagues        = viewModel.favouriteLeagues.value,
+                            onSuggestionTap         = { entry -> viewModel.updateSearchQuery(entry.name) },
+                            onLeagueTap             = { league -> viewModel.updateSearchQuery(league) },
+                            onToggleTeamFavourite   = { name -> viewModel.toggleFavouriteTeam(name) },
+                            onToggleLeagueFavourite = { league -> viewModel.toggleFavouriteLeague(league) },
                         )
                     }
                     
@@ -302,6 +308,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     // so Compose can correctly identity and diff items on recomposition
                                     // (index-based keys cause incorrect animations and unnecessary
                                     // recomposition when the list order changes).
+                                    val favouriteMatchUrls by viewModel.favouriteMatchUrls
                                     itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { _, match ->
                                         MatchItem(
                                             match = match,
@@ -312,7 +319,8 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                             collapsedFocusRequester = if (expandedMatchUrl == match.detailPageUrl)
                                                 collapsedCardFocusRequester
                                             else
-                                                null
+                                                null,
+                                            isFavourite = match.detailPageUrl in favouriteMatchUrls
                                         )
                                     }
 

@@ -138,8 +138,7 @@ class Scraper(private val context: Context) {
                 doc
             }
         }
-        ScrapingSection.FOOTBALL,
-        ScrapingSection.FAVOURITES -> {
+        ScrapingSection.FOOTBALL -> {
             val copy = doc.clone()
             copy.select("#upcoming").remove()
             Log.d("Scraper", "Using document minus #upcoming for ${section.displayName} section")
@@ -263,8 +262,7 @@ class Scraper(private val context: Context) {
 
         // ── Section filtering ─────────────────────────────────────────────────
         val filteredMatches = when (section) {
-            ScrapingSection.FOOTBALL,
-            ScrapingSection.FAVOURITES -> {
+            ScrapingSection.FOOTBALL -> {
                 val footballMatches = uniqueMatches.filter { match ->
                     val ct = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
                     FOOTBALL_KEYWORDS.any { ct.contains(it) } || match.sport.lowercase() == "football"

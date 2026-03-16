@@ -12,7 +12,9 @@ import com.example.livetv.data.model.Match
 import com.example.livetv.data.model.TeamEntry
 import com.example.livetv.data.repository.MatchRepository
 import com.example.livetv.data.model.ScrapingSection
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 const val INITIAL_LOAD_SIZE = 16
 const val LOAD_MORE_SIZE = 10
@@ -76,7 +78,17 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── Team DB search suggestions ────────────────────────────────────────────
     /** Populated while search is active and query is non-blank. */
-    val teamSuggestions = mutableStateOf<List<TeamEntry>>(emptyList())
+    val teamSuggestions   = mutableStateOf<List<TeamEntry>>(emptyList())
+    /** League suggestions populated while search is active and query is non-blank. */
+    val leagueSuggestions = mutableStateOf<List<String>>(emptyList())
+
+    /**
+     * Pre-computed set of [Match.detailPageUrl] values for all matches that are currently
+     * considered a favourite (team or league match). Recomputed off the main thread whenever
+     * [toggleFavouriteTeam] or [toggleFavouriteLeague] is called. UI and [getFilteredMatches]
+     * do a cheap O(1) lookup against this set instead of calling [isFavouriteMatch] per item.
+     */
+    val favouriteMatchUrls = mutableStateOf<Set<String>>(emptySet())
 
     private var currentVisibleCount: Int
         get() = currentSectionData().currentVisibleCount
@@ -318,10 +330,10 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             sportMatches && leagueMatches
         }
 
-        // When in Favourites section, restrict to matches involving a favourite
-        if (selectedSection.value == ScrapingSection.FAVOURITES) {
-            filtered = filtered.filter { isFavouriteMatch(it) }
-        }
+        // Pin favourite matches to the top of every section (O(1) set lookup, not linear scan)
+        val favUrls = favouriteMatchUrls.value
+        val (favs, rest) = filtered.partition { it.detailPageUrl in favUrls }
+        filtered = favs + rest
         
         // Apply search filter if active
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
@@ -333,6 +345,29 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         }
         
         return filtered
+    }
+
+    /**
+     * Recomputes [favouriteMatchUrls] on [Dispatchers.Default] then updates visible matches.
+     * Call this instead of [refreshVisibleMatches] when the favourites sets change.
+     */
+    private fun recomputeFavouriteMatchUrls() {
+        val currentMatches = allMatches
+        val favTeams   = favouriteTeams.value
+        val favLeagues = favouriteLeagues.value
+        viewModelScope.launch(Dispatchers.Default) {
+            val urls: Set<String> = if (favTeams.isEmpty() && favLeagues.isEmpty()) {
+                emptySet()
+            } else {
+                currentMatches
+                    .filter { isFavouriteMatch(it) }
+                    .mapTo(HashSet()) { it.detailPageUrl }
+            }
+            withContext(Dispatchers.Main) {
+                favouriteMatchUrls.value = urls
+                refreshVisibleMatches()
+            }
+        }
     }
 
     fun setSportFilter(sport: String?) {
@@ -575,6 +610,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         isSearchActive.value = false
         searchQuery.value = ""
         teamSuggestions.value = emptyList()
+        leagueSuggestions.value = emptyList()
         refreshVisibleMatches()
         Log.d("ViewModel", "Search deactivated")
     }
@@ -587,6 +623,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         // Update team DB suggestions in real-time
         teamSuggestions.value = if (query.isNotBlank()) TeamMatcher.teamsMatchingQuery(query)
                                 else emptyList()
+        leagueSuggestions.value = if (query.isNotBlank())
+            TeamDatabase.getAllLeagues().filter { it.contains(query, ignoreCase = true) }.take(6)
+        else emptyList()
         refreshVisibleMatches()
         Log.d("ViewModel", "Search query updated: '$query'")
     }
@@ -644,8 +683,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             favouritesPrefs.addTeam(teamName)
         }
         favouriteTeams.value = favouritesPrefs.getFavouriteTeams()
-        // If we're in the FAVOURITES section, the visible list may have changed
-        if (selectedSection.value == ScrapingSection.FAVOURITES) refreshVisibleMatches()
+        recomputeFavouriteMatchUrls()
         Log.d("ViewModel", "Toggled favourite team '$teamName'. Now: ${favouriteTeams.value}")
     }
 
@@ -657,7 +695,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             favouritesPrefs.addLeague(leagueName)
         }
         favouriteLeagues.value = favouritesPrefs.getFavouriteLeagues()
-        if (selectedSection.value == ScrapingSection.FAVOURITES) refreshVisibleMatches()
+        recomputeFavouriteMatchUrls()
         Log.d("ViewModel", "Toggled favourite league '$leagueName'. Now: ${favouriteLeagues.value}")
     }
 

@@ -1,7 +1,10 @@
 [
   {
     "name": "Austria Vienna",
-    "aliases": [],
+    "aliases": [
+      "FK Austria Wien",
+      "Austria Wien"
+    ],
     "league": "Austria - Bundesliga",
     "logoAssetPath": "logos/Austria - Bundesliga/Austria Vienna.png"
   },
@@ -19,19 +22,29 @@
   },
   {
     "name": "LASK",
-    "aliases": [],
+    "aliases": [
+      "LASK Linz"
+    ],
     "league": "Austria - Bundesliga",
     "logoAssetPath": "logos/Austria - Bundesliga/LASK.png"
   },
   {
     "name": "Rapid Vienna",
-    "aliases": [],
+    "aliases": [
+      "Rapid Wien",
+      "SK Rapid Wien",
+      "Rapid"
+    ],
     "league": "Austria - Bundesliga",
     "logoAssetPath": "logos/Austria - Bundesliga/Rapid Vienna.png"
   },
   {
     "name": "Red Bull Salzburg",
-    "aliases": [],
+    "aliases": [
+      "RB Salzburg",
+      "FC Salzburg",
+      "Salzburg"
+    ],
     "league": "Austria - Bundesliga",
     "logoAssetPath": "logos/Austria - Bundesliga/Red Bull Salzburg.png"
   },
@@ -80,7 +93,9 @@
   {
     "name": "Club Brugge KV",
     "aliases": [
-      "Club Brugge"
+      "Club Brugge",
+      "Club Bruges",
+      "Brugge"
     ],
     "league": "Belgium - Jupiler Pro League",
     "logoAssetPath": "logos/Belgium - Jupiler Pro League/Club Brugge KV.png"
@@ -93,13 +108,18 @@
   },
   {
     "name": "KAA Gent",
-    "aliases": [],
+    "aliases": [
+      "Gent",
+      "Ghent"
+    ],
     "league": "Belgium - Jupiler Pro League",
     "logoAssetPath": "logos/Belgium - Jupiler Pro League/KAA Gent.png"
   },
   {
     "name": "KRC Genk",
-    "aliases": [],
+    "aliases": [
+      "Genk"
+    ],
     "league": "Belgium - Jupiler Pro League",
     "logoAssetPath": "logos/Belgium - Jupiler Pro League/KRC Genk.png"
   },
@@ -130,14 +150,18 @@
   {
     "name": "RSC Anderlecht",
     "aliases": [
-      "Anderlecht"
+      "Anderlecht",
+      "RSCA"
     ],
     "league": "Belgium - Jupiler Pro League",
     "logoAssetPath": "logos/Belgium - Jupiler Pro League/RSC Anderlecht.png"
   },
   {
     "name": "Royal Antwerp FC",
-    "aliases": [],
+    "aliases": [
+      "Antwerp",
+      "R. Antwerp"
+    ],
     "league": "Belgium - Jupiler Pro League",
     "logoAssetPath": "logos/Belgium - Jupiler Pro League/Royal Antwerp FC.png"
   },
@@ -161,7 +185,10 @@
   },
   {
     "name": "Union Saint-Gilloise",
-    "aliases": [],
+    "aliases": [
+      "Union SG",
+      "USG"
+    ],
     "league": "Belgium - Jupiler Pro League",
     "logoAssetPath": "logos/Belgium - Jupiler Pro League/Union Saint-Gilloise.png"
   },
@@ -269,7 +296,10 @@
   },
   {
     "name": "GNK Dinamo Zagreb",
-    "aliases": [],
+    "aliases": [
+      "Dinamo Zagreb",
+      "Dinamo"
+    ],
     "league": "Croatia - SuperSport HNL",
     "logoAssetPath": "logos/Croatia - SuperSport HNL/GNK Dinamo Zagreb.png"
   },
@@ -281,13 +311,19 @@
   },
   {
     "name": "HNK Hajduk Split",
-    "aliases": [],
+    "aliases": [
+      "Hajduk Split",
+      "Hajduk"
+    ],
     "league": "Croatia - SuperSport HNL",
     "logoAssetPath": "logos/Croatia - SuperSport HNL/HNK Hajduk Split.png"
   },
   {
     "name": "HNK Rijeka",
-    "aliases": [],
+    "aliases": [
+      "Rijeka",
+      "NK Rijeka"
+    ],
     "league": "Croatia - SuperSport HNL",
     "logoAssetPath": "logos/Croatia - SuperSport HNL/HNK Rijeka.png"
   },
@@ -335,7 +371,11 @@
   },
   {
     "name": "AC Sparta Prague",
-    "aliases": [],
+    "aliases": [
+      "Sparta Prague",
+      "Sparta Praha",
+      "Sparta"
+    ],
     "league": "Czech Republic - Chance Liga",
     "logoAssetPath": "logos/Czech Republic - Chance Liga/AC Sparta Prague.png"
   },
@@ -365,7 +405,10 @@
   },
   {
     "name": "FC Viktoria Plzen",
-    "aliases": [],
+    "aliases": [
+      "Viktoria Plzen",
+      "Plzen"
+    ],
     "league": "Czech Republic - Chance Liga",
     "logoAssetPath": "logos/Czech Republic - Chance Liga/FC Viktoria Plzen.png"
   },
@@ -419,7 +462,11 @@
   },
   {
     "name": "SK Slavia Prague",
-    "aliases": [],
+    "aliases": [
+      "Slavia Prague",
+      "Slavia Praha",
+      "Slavia"
+    ],
     "league": "Czech Republic - Chance Liga",
     "logoAssetPath": "logos/Czech Republic - Chance Liga/SK Slavia Prague.png"
   },
@@ -437,7 +484,10 @@
   },
   {
     "name": "FC Copenhagen",
-    "aliases": [],
+    "aliases": [
+      "Copenhagen",
+      "FCK"
+    ],
     "league": "Denmark - Superliga",
     "logoAssetPath": "logos/Denmark - Superliga/FC Copenhagen.png"
   },
@@ -449,7 +499,9 @@
   },
   {
     "name": "FC Midtjylland",
-    "aliases": [],
+    "aliases": [
+      "Midtjylland"
+    ],
     "league": "Denmark - Superliga",
     "logoAssetPath": "logos/Denmark - Superliga/FC Midtjylland.png"
   },
@@ -497,21 +549,30 @@
   },
   {
     "name": "AFC Bournemouth",
-    "aliases": [],
+    "aliases": [
+      "Bournemouth",
+      "AFCB"
+    ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/AFC Bournemouth.png"
   },
   {
     "name": "Arsenal FC",
     "aliases": [
-      "Arsenal"
+      "Arsenal",
+      "AFC",
+      "The Gunners"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Arsenal FC.png"
   },
   {
     "name": "Aston Villa",
-    "aliases": [],
+    "aliases": [
+      "Villa",
+      "AVFC",
+      "Aston Villa FC"
+    ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Aston Villa.png"
   },
@@ -524,7 +585,9 @@
   {
     "name": "Brighton & Hove Albion",
     "aliases": [
-      "Brighton"
+      "Brighton",
+      "Brighton and Hove Albion",
+      "BHAFC"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Brighton & Hove Albion.png"
@@ -538,21 +601,28 @@
   {
     "name": "Chelsea FC",
     "aliases": [
-      "Chelsea"
+      "Chelsea",
+      "CFC",
+      "The Blues"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Chelsea FC.png"
   },
   {
     "name": "Crystal Palace",
-    "aliases": [],
+    "aliases": [
+      "Palace",
+      "CPFC"
+    ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Crystal Palace.png"
   },
   {
     "name": "Everton FC",
     "aliases": [
-      "Everton"
+      "Everton",
+      "EFC",
+      "The Toffees"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Everton FC.png"
@@ -560,7 +630,8 @@
   {
     "name": "Fulham FC",
     "aliases": [
-      "Fulham"
+      "Fulham",
+      "FFC"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Fulham FC.png"
@@ -568,7 +639,8 @@
   {
     "name": "Leeds United",
     "aliases": [
-      "Leeds"
+      "Leeds",
+      "LUFC"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Leeds United.png"
@@ -576,7 +648,9 @@
   {
     "name": "Liverpool FC",
     "aliases": [
-      "Liverpool"
+      "Liverpool",
+      "LFC",
+      "The Reds"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Liverpool FC.png"
@@ -584,7 +658,10 @@
   {
     "name": "Manchester City",
     "aliases": [
-      "Man City"
+      "Man City",
+      "MCFC",
+      "City",
+      "Man. City"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Manchester City.png"
@@ -593,7 +670,10 @@
     "name": "Manchester United",
     "aliases": [
       "Man United",
-      "Man Utd"
+      "Man Utd",
+      "MUFC",
+      "United",
+      "Man. United"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Manchester United.png"
@@ -601,7 +681,9 @@
   {
     "name": "Newcastle United",
     "aliases": [
-      "Newcastle"
+      "Newcastle",
+      "NUFC",
+      "The Magpies"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Newcastle United.png"
@@ -610,7 +692,9 @@
     "name": "Nottingham Forest",
     "aliases": [
       "Notts Forest",
-      "Forest"
+      "Forest",
+      "NFFC",
+      "Nottm Forest"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Nottingham Forest.png"
@@ -625,7 +709,8 @@
     "name": "Tottenham Hotspur",
     "aliases": [
       "Tottenham",
-      "Spurs"
+      "Spurs",
+      "THFC"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Tottenham Hotspur.png"
@@ -633,7 +718,10 @@
   {
     "name": "West Ham United",
     "aliases": [
-      "West Ham"
+      "West Ham",
+      "WHUFC",
+      "The Hammers",
+      "WHU"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/West Ham United.png"
@@ -641,28 +729,35 @@
   {
     "name": "Wolverhampton Wanderers",
     "aliases": [
-      "Wolves"
+      "Wolves",
+      "WWFC",
+      "Wolverhampton"
     ],
     "league": "England - Premier League",
     "logoAssetPath": "logos/England - Premier League/Wolverhampton Wanderers.png"
   },
   {
     "name": "AJ Auxerre",
-    "aliases": [],
+    "aliases": [
+      "Auxerre"
+    ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/AJ Auxerre.png"
   },
   {
     "name": "AS Monaco",
     "aliases": [
-      "Monaco"
+      "Monaco",
+      "ASM"
     ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/AS Monaco.png"
   },
   {
     "name": "Angers SCO",
-    "aliases": [],
+    "aliases": [
+      "Angers"
+    ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/Angers SCO.png"
   },
@@ -674,13 +769,17 @@
   },
   {
     "name": "FC Metz",
-    "aliases": [],
+    "aliases": [
+      "Metz"
+    ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/FC Metz.png"
   },
   {
     "name": "FC Nantes",
-    "aliases": [],
+    "aliases": [
+      "Nantes"
+    ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/FC Nantes.png"
   },
@@ -693,14 +792,18 @@
   {
     "name": "LOSC Lille",
     "aliases": [
-      "Lille"
+      "Lille",
+      "LOSC"
     ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/LOSC Lille.png"
   },
   {
     "name": "Le Havre AC",
-    "aliases": [],
+    "aliases": [
+      "Le Havre",
+      "HAC"
+    ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/Le Havre AC.png"
   },
@@ -716,7 +819,9 @@
     "name": "Olympique Lyon",
     "aliases": [
       "Lyon",
-      "OL"
+      "OL",
+      "Olympique Lyonnais",
+      "Olympique de Lyon"
     ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/Olympique Lyon.png"
@@ -737,7 +842,10 @@
     "name": "Paris Saint-Germain",
     "aliases": [
       "PSG",
-      "Paris Saint Germain"
+      "Paris Saint Germain",
+      "Paris SG",
+      "PSG FC",
+      "Paris"
     ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/Paris Saint-Germain.png"
@@ -752,7 +860,10 @@
   },
   {
     "name": "RC Strasbourg Alsace",
-    "aliases": [],
+    "aliases": [
+      "Strasbourg",
+      "RC Strasbourg"
+    ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/RC Strasbourg Alsace.png"
   },
@@ -767,14 +878,18 @@
   {
     "name": "Stade Rennais FC",
     "aliases": [
-      "Rennes"
+      "Rennes",
+      "Stade Rennais"
     ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/Stade Rennais FC.png"
   },
   {
     "name": "1.FC Heidenheim 1846",
-    "aliases": [],
+    "aliases": [
+      "Heidenheim",
+      "FC Heidenheim"
+    ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/1.FC Heidenheim 1846.png"
   },
@@ -792,7 +907,11 @@
   },
   {
     "name": "1.FSV Mainz 05",
-    "aliases": [],
+    "aliases": [
+      "Mainz",
+      "FSV Mainz",
+      "Mainz 05"
+    ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/1.FSV Mainz 05.png"
   },
@@ -800,7 +919,8 @@
     "name": "Bayer 04 Leverkusen",
     "aliases": [
       "Bayer Leverkusen",
-      "Leverkusen"
+      "Leverkusen",
+      "B04"
     ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/Bayer 04 Leverkusen.png"
@@ -808,9 +928,12 @@
   {
     "name": "Bayern Munich",
     "aliases": [
+      "FC Bayern Munchen",
       "FC Bayern",
-      "FC Bayern München",
-      "Bayern München"
+      "Bayern",
+      "Bayern Munchen",
+      "FC Bayern Munich",
+      "FCB"
     ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/Bayern Munich.png"
@@ -819,44 +942,50 @@
     "name": "Borussia Dortmund",
     "aliases": [
       "BVB",
-      "Dortmund"
+      "Dortmund",
+      "BVB 09"
     ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/Borussia Dortmund.png"
   },
   {
     "name": "Borussia Mönchengladbach",
-    "aliases": [
-      "Borussia Gladbach",
-      "Mönchengladbach"
-    ],
+    "aliases": [],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/Borussia Mönchengladbach.png"
   },
   {
     "name": "Eintracht Frankfurt",
     "aliases": [
-      "Frankfurt"
+      "Frankfurt",
+      "SGE",
+      "Eintracht"
     ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/Eintracht Frankfurt.png"
   },
   {
     "name": "FC Augsburg",
-    "aliases": [],
+    "aliases": [
+      "Augsburg"
+    ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/FC Augsburg.png"
   },
   {
     "name": "FC St. Pauli",
-    "aliases": [],
+    "aliases": [
+      "St Pauli",
+      "St. Pauli"
+    ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/FC St. Pauli.png"
   },
   {
     "name": "Hamburger SV",
     "aliases": [
-      "Hamburg"
+      "Hamburg",
+      "HSV"
     ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/Hamburger SV.png"
@@ -864,7 +993,8 @@
   {
     "name": "RB Leipzig",
     "aliases": [
-      "Leipzig"
+      "Leipzig",
+      "Red Bull Leipzig"
     ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/RB Leipzig.png"
@@ -879,13 +1009,20 @@
   },
   {
     "name": "SV Werder Bremen",
-    "aliases": [],
+    "aliases": [
+      "Werder Bremen",
+      "Bremen",
+      "Werder"
+    ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/SV Werder Bremen.png"
   },
   {
     "name": "TSG 1899 Hoffenheim",
-    "aliases": [],
+    "aliases": [
+      "Hoffenheim",
+      "TSG Hoffenheim"
+    ],
     "league": "Germany - Bundesliga",
     "logoAssetPath": "logos/Germany - Bundesliga/TSG 1899 Hoffenheim.png"
   },
@@ -933,7 +1070,9 @@
   },
   {
     "name": "Aris Thessaloniki",
-    "aliases": [],
+    "aliases": [
+      "Aris"
+    ],
     "league": "Greece - Super League 1",
     "logoAssetPath": "logos/Greece - Super League 1/Aris Thessaloniki.png"
   },
@@ -959,7 +1098,8 @@
     "name": "Olympiacos Piraeus",
     "aliases": [
       "Olympiakos",
-      "Olympiacos"
+      "Olympiacos",
+      "Olympiakos Piraeus"
     ],
     "league": "Greece - Super League 1",
     "logoAssetPath": "logos/Greece - Super League 1/Olympiacos Piraeus.png"
@@ -975,7 +1115,8 @@
   {
     "name": "Panathinaikos FC",
     "aliases": [
-      "Panathinaikos"
+      "Panathinaikos",
+      "PAO"
     ],
     "league": "Greece - Super League 1",
     "logoAssetPath": "logos/Greece - Super League 1/Panathinaikos FC.png"
@@ -1012,7 +1153,9 @@
   },
   {
     "name": "Hapoel Beer Sheva",
-    "aliases": [],
+    "aliases": [
+      "Beer Sheva"
+    ],
     "league": "Israel - Ligat ha'Al",
     "logoAssetPath": "logos/Israel - Ligat ha'Al/Hapoel Beer Sheva.png"
   },
@@ -1078,28 +1221,35 @@
   },
   {
     "name": "Maccabi Tel Aviv",
-    "aliases": [],
+    "aliases": [
+      "Maccabi TA"
+    ],
     "league": "Israel - Ligat ha'Al",
     "logoAssetPath": "logos/Israel - Ligat ha'Al/Maccabi Tel Aviv.png"
   },
   {
     "name": "AC Milan",
     "aliases": [
-      "Milan"
+      "Milan",
+      "Rossoneri"
     ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/AC Milan.png"
   },
   {
     "name": "ACF Fiorentina",
-    "aliases": [],
+    "aliases": [
+      "Fiorentina",
+      "Viola"
+    ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/ACF Fiorentina.png"
   },
   {
     "name": "AS Roma",
     "aliases": [
-      "Roma"
+      "Roma",
+      "Giallorossi"
     ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/AS Roma.png"
@@ -1107,7 +1257,8 @@
   {
     "name": "Atalanta BC",
     "aliases": [
-      "Atalanta"
+      "Atalanta",
+      "La Dea"
     ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/Atalanta BC.png"
@@ -1126,19 +1277,25 @@
   },
   {
     "name": "Como 1907",
-    "aliases": [],
+    "aliases": [
+      "Como"
+    ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/Como 1907.png"
   },
   {
     "name": "Genoa CFC",
-    "aliases": [],
+    "aliases": [
+      "Genoa"
+    ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/Genoa CFC.png"
   },
   {
     "name": "Hellas Verona",
-    "aliases": [],
+    "aliases": [
+      "Verona"
+    ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/Hellas Verona.png"
   },
@@ -1148,7 +1305,8 @@
       "Inter",
       "Internazionale",
       "FC Internazionale",
-      "FC Inter"
+      "FC Inter",
+      "FC Internazionale Milano"
     ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/Inter Milan.png"
@@ -1161,7 +1319,9 @@
   },
   {
     "name": "Parma Calcio 1913",
-    "aliases": [],
+    "aliases": [
+      "Parma"
+    ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/Parma Calcio 1913.png"
   },
@@ -1188,7 +1348,8 @@
   {
     "name": "Torino FC",
     "aliases": [
-      "Torino"
+      "Torino",
+      "Toro"
     ],
     "league": "Italy - Serie A",
     "logoAssetPath": "logos/Italy - Serie A/Torino FC.png"
@@ -1228,7 +1389,8 @@
   {
     "name": "Ajax Amsterdam",
     "aliases": [
-      "Ajax"
+      "Ajax",
+      "AFC Ajax"
     ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/Ajax Amsterdam.png"
@@ -1247,7 +1409,9 @@
   },
   {
     "name": "FC Utrecht",
-    "aliases": [],
+    "aliases": [
+      "Utrecht"
+    ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/FC Utrecht.png"
   },
@@ -1265,7 +1429,9 @@
   },
   {
     "name": "Fortuna Sittard",
-    "aliases": [],
+    "aliases": [
+      "Fortuna"
+    ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/Fortuna Sittard.png"
   },
@@ -1289,28 +1455,33 @@
   },
   {
     "name": "NEC Nijmegen",
-    "aliases": [],
+    "aliases": [
+      "NEC"
+    ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/NEC Nijmegen.png"
   },
   {
     "name": "PEC Zwolle",
-    "aliases": [],
+    "aliases": [
+      "Zwolle"
+    ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/PEC Zwolle.png"
   },
   {
     "name": "PSV Eindhoven",
     "aliases": [
-      "PSV",
-      "PSV Eindhoven"
+      "PSV"
     ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/PSV Eindhoven.png"
   },
   {
     "name": "SC Heerenveen",
-    "aliases": [],
+    "aliases": [
+      "Heerenveen"
+    ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/SC Heerenveen.png"
   },
@@ -1322,7 +1493,9 @@
   },
   {
     "name": "Sparta Rotterdam",
-    "aliases": [],
+    "aliases": [
+      "Sparta"
+    ],
     "league": "Netherlands - Eredivisie",
     "logoAssetPath": "logos/Netherlands - Eredivisie/Sparta Rotterdam.png"
   },
@@ -1376,13 +1549,17 @@
   },
   {
     "name": "Molde FK",
-    "aliases": [],
+    "aliases": [
+      "Molde"
+    ],
     "league": "Norway - Eliteserien",
     "logoAssetPath": "logos/Norway - Eliteserien/Molde FK.png"
   },
   {
     "name": "Rosenborg BK",
-    "aliases": [],
+    "aliases": [
+      "Rosenborg"
+    ],
     "league": "Norway - Eliteserien",
     "logoAssetPath": "logos/Norway - Eliteserien/Rosenborg BK.png"
   },
@@ -1418,7 +1595,9 @@
   },
   {
     "name": "Viking FK",
-    "aliases": [],
+    "aliases": [
+      "Viking"
+    ],
     "league": "Norway - Eliteserien",
     "logoAssetPath": "logos/Norway - Eliteserien/Viking FK.png"
   },
@@ -1472,7 +1651,9 @@
   },
   {
     "name": "Lech Poznan",
-    "aliases": [],
+    "aliases": [
+      "Lech"
+    ],
     "league": "Poland - PKO BP Ekstraklasa",
     "logoAssetPath": "logos/Poland - PKO BP Ekstraklasa/Lech Poznan.png"
   },
@@ -1484,7 +1665,10 @@
   },
   {
     "name": "Legia Warszawa",
-    "aliases": [],
+    "aliases": [
+      "Legia Warsaw",
+      "Legia"
+    ],
     "league": "Poland - PKO BP Ekstraklasa",
     "logoAssetPath": "logos/Poland - PKO BP Ekstraklasa/Legia Warszawa.png"
   },
@@ -1568,7 +1752,9 @@
   },
   {
     "name": "Casa Pia AC",
-    "aliases": [],
+    "aliases": [
+      "Casa Pia"
+    ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/Casa Pia AC.png"
   },
@@ -1580,7 +1766,9 @@
   },
   {
     "name": "FC Arouca",
-    "aliases": [],
+    "aliases": [
+      "Arouca"
+    ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/FC Arouca.png"
   },
@@ -1593,39 +1781,49 @@
   {
     "name": "FC Porto",
     "aliases": [
-      "Porto"
+      "Porto",
+      "FCP"
     ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/FC Porto.png"
   },
   {
     "name": "GD Estoril Praia",
-    "aliases": [],
+    "aliases": [
+      "Estoril"
+    ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/GD Estoril Praia.png"
   },
   {
     "name": "Gil Vicente FC",
-    "aliases": [],
+    "aliases": [
+      "Gil Vicente"
+    ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/Gil Vicente FC.png"
   },
   {
     "name": "Moreirense FC",
-    "aliases": [],
+    "aliases": [
+      "Moreirense"
+    ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/Moreirense FC.png"
   },
   {
     "name": "Rio Ave FC",
-    "aliases": [],
+    "aliases": [
+      "Rio Ave"
+    ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/Rio Ave FC.png"
   },
   {
     "name": "SC Braga",
     "aliases": [
-      "Braga"
+      "Braga",
+      "Sporting Braga"
     ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/SC Braga.png"
@@ -1633,7 +1831,8 @@
   {
     "name": "SL Benfica",
     "aliases": [
-      "Benfica"
+      "Benfica",
+      "Sport Lisboa e Benfica"
     ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/SL Benfica.png"
@@ -1641,7 +1840,9 @@
   {
     "name": "Sporting CP",
     "aliases": [
-      "Sporting"
+      "Sporting",
+      "Sporting Clube de Portugal",
+      "Sporting Lisbon"
     ],
     "league": "Portugal - Liga Portugal",
     "logoAssetPath": "logos/Portugal - Liga Portugal/Sporting CP.png"
@@ -1672,7 +1873,10 @@
   },
   {
     "name": "CFR Cluj",
-    "aliases": [],
+    "aliases": [
+      "CFR 1907 Cluj",
+      "Cluj"
+    ],
     "league": "Romania - SuperLiga",
     "logoAssetPath": "logos/Romania - SuperLiga/CFR Cluj.png"
   },
@@ -1720,7 +1924,11 @@
   },
   {
     "name": "FCSB",
-    "aliases": [],
+    "aliases": [
+      "Steaua Bucharest",
+      "Steaua",
+      "FC Steaua"
+    ],
     "league": "Romania - SuperLiga",
     "logoAssetPath": "logos/Romania - SuperLiga/FCSB.png"
   },
@@ -1768,7 +1976,10 @@
   },
   {
     "name": "CSKA Moscow",
-    "aliases": [],
+    "aliases": [
+      "CSKA",
+      "FC CSKA Moscow"
+    ],
     "league": "Russia - Premier Liga",
     "logoAssetPath": "logos/Russia - Premier Liga/CSKA Moscow.png"
   },
@@ -1780,13 +1991,19 @@
   },
   {
     "name": "Dynamo Moscow",
-    "aliases": [],
+    "aliases": [
+      "Dynamo",
+      "FC Dynamo",
+      "Dinamo Moscow"
+    ],
     "league": "Russia - Premier Liga",
     "logoAssetPath": "logos/Russia - Premier Liga/Dynamo Moscow.png"
   },
   {
     "name": "FC Krasnodar",
-    "aliases": [],
+    "aliases": [
+      "Krasnodar"
+    ],
     "league": "Russia - Premier Liga",
     "logoAssetPath": "logos/Russia - Premier Liga/FC Krasnodar.png"
   },
@@ -1816,19 +2033,27 @@
   },
   {
     "name": "Lokomotiv Moscow",
-    "aliases": [],
+    "aliases": [
+      "Lokomotiv",
+      "FC Lokomotiv"
+    ],
     "league": "Russia - Premier Liga",
     "logoAssetPath": "logos/Russia - Premier Liga/Lokomotiv Moscow.png"
   },
   {
     "name": "Rubin Kazan",
-    "aliases": [],
+    "aliases": [
+      "Rubin"
+    ],
     "league": "Russia - Premier Liga",
     "logoAssetPath": "logos/Russia - Premier Liga/Rubin Kazan.png"
   },
   {
     "name": "Spartak Moscow",
-    "aliases": [],
+    "aliases": [
+      "Spartak",
+      "FC Spartak Moscow"
+    ],
     "league": "Russia - Premier Liga",
     "logoAssetPath": "logos/Russia - Premier Liga/Spartak Moscow.png"
   },
@@ -1846,7 +2071,9 @@
   },
   {
     "name": "Aberdeen FC",
-    "aliases": [],
+    "aliases": [
+      "Aberdeen"
+    ],
     "league": "Scotland - Scottish Premiership",
     "logoAssetPath": "logos/Scotland - Scottish Premiership/Aberdeen FC.png"
   },
@@ -1860,7 +2087,9 @@
   },
   {
     "name": "Dundee FC",
-    "aliases": [],
+    "aliases": [
+      "Dundee"
+    ],
     "league": "Scotland - Scottish Premiership",
     "logoAssetPath": "logos/Scotland - Scottish Premiership/Dundee FC.png"
   },
@@ -1884,13 +2113,18 @@
   },
   {
     "name": "Hibernian FC",
-    "aliases": [],
+    "aliases": [
+      "Hibs",
+      "Hibernian"
+    ],
     "league": "Scotland - Scottish Premiership",
     "logoAssetPath": "logos/Scotland - Scottish Premiership/Hibernian FC.png"
   },
   {
     "name": "Kilmarnock FC",
-    "aliases": [],
+    "aliases": [
+      "Kilmarnock"
+    ],
     "league": "Scotland - Scottish Premiership",
     "logoAssetPath": "logos/Scotland - Scottish Premiership/Kilmarnock FC.png"
   },
@@ -1902,7 +2136,9 @@
   },
   {
     "name": "Motherwell FC",
-    "aliases": [],
+    "aliases": [
+      "Motherwell"
+    ],
     "league": "Scotland - Scottish Premiership",
     "logoAssetPath": "logos/Scotland - Scottish Premiership/Motherwell FC.png"
   },
@@ -1959,7 +2195,8 @@
   {
     "name": "FK Partizan Belgrade",
     "aliases": [
-      "Partizan"
+      "Partizan",
+      "FK Partizan"
     ],
     "league": "Serbia - Super liga Srbije",
     "logoAssetPath": "logos/Serbia - Super liga Srbije/FK Partizan Belgrade.png"
@@ -2010,7 +2247,9 @@
     "name": "Red Star Belgrade",
     "aliases": [
       "Red Star",
-      "Crvena Zvezda"
+      "Crvena Zvezda",
+      "FK Crvena zvezda",
+      "Estrella Roja"
     ],
     "league": "Serbia - Super liga Srbije",
     "logoAssetPath": "logos/Serbia - Super liga Srbije/Red Star Belgrade.png"
@@ -2024,7 +2263,9 @@
   {
     "name": "Athletic Bilbao",
     "aliases": [
-      "Athletic Club"
+      "Athletic Club",
+      "Athletic Club de Bilbao",
+      "Bilbao"
     ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Athletic Bilbao.png"
@@ -2047,7 +2288,9 @@
     "name": "Celta de Vigo",
     "aliases": [
       "Celta Vigo",
-      "Celta"
+      "Celta",
+      "RC Celta",
+      "RC Celta de Vigo"
     ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Celta de Vigo.png"
@@ -2060,7 +2303,9 @@
   },
   {
     "name": "Elche CF",
-    "aliases": [],
+    "aliases": [
+      "Elche"
+    ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Elche CF.png"
   },
@@ -2068,7 +2313,8 @@
     "name": "FC Barcelona",
     "aliases": [
       "Barcelona",
-      "Barca"
+      "Barca",
+      "FCB"
     ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/FC Barcelona.png"
@@ -2091,7 +2337,9 @@
   },
   {
     "name": "Levante UD",
-    "aliases": [],
+    "aliases": [
+      "Levante"
+    ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Levante UD.png"
   },
@@ -2111,22 +2359,25 @@
   },
   {
     "name": "Rayo Vallecano",
-    "aliases": [],
+    "aliases": [
+      "Rayo"
+    ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Rayo Vallecano.png"
   },
   {
     "name": "Real Betis Balompié",
-    "aliases": [
-      "Real Betis",
-      "Betis"
-    ],
+    "aliases": [],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Real Betis Balompié.png"
   },
   {
     "name": "Real Madrid",
-    "aliases": [],
+    "aliases": [
+      "Real Madrid CF",
+      "RMCF",
+      "RMA"
+    ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Real Madrid.png"
   },
@@ -2138,7 +2389,10 @@
   },
   {
     "name": "Real Sociedad",
-    "aliases": [],
+    "aliases": [
+      "Real Sociedad de Futbol",
+      "La Real"
+    ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Real Sociedad.png"
   },
@@ -2153,7 +2407,8 @@
   {
     "name": "Valencia CF",
     "aliases": [
-      "Valencia"
+      "Valencia",
+      "VCF"
     ],
     "league": "Spain - LaLiga",
     "logoAssetPath": "logos/Spain - LaLiga/Valencia CF.png"
@@ -2168,7 +2423,9 @@
   },
   {
     "name": "AIK",
-    "aliases": [],
+    "aliases": [
+      "AIK Solna"
+    ],
     "league": "Sweden - Allsvenskan",
     "logoAssetPath": "logos/Sweden - Allsvenskan/AIK.png"
   },
@@ -2204,7 +2461,9 @@
   },
   {
     "name": "Hammarby IF",
-    "aliases": [],
+    "aliases": [
+      "Hammarby"
+    ],
     "league": "Sweden - Allsvenskan",
     "logoAssetPath": "logos/Sweden - Allsvenskan/Hammarby IF.png"
   },
@@ -2264,13 +2523,19 @@
   },
   {
     "name": "BSC Young Boys",
-    "aliases": [],
+    "aliases": [
+      "Young Boys",
+      "YB"
+    ],
     "league": "Switzerland - Super League",
     "logoAssetPath": "logos/Switzerland - Super League/BSC Young Boys.png"
   },
   {
     "name": "FC Basel 1893",
-    "aliases": [],
+    "aliases": [
+      "Basel",
+      "FC Basel"
+    ],
     "league": "Switzerland - Super League",
     "logoAssetPath": "logos/Switzerland - Super League/FC Basel 1893.png"
   },
@@ -2330,7 +2595,9 @@
   },
   {
     "name": "Servette FC",
-    "aliases": [],
+    "aliases": [
+      "Servette"
+    ],
     "league": "Switzerland - Super League",
     "logoAssetPath": "logos/Switzerland - Super League/Servette FC.png"
   },
@@ -2348,15 +2615,18 @@
   },
   {
     "name": "Basaksehir FK",
-    "aliases": [],
+    "aliases": [
+      "Basaksehir",
+      "Istanbul Basaksehir"
+    ],
     "league": "Türkiye - Süper Lig",
     "logoAssetPath": "logos/Türkiye - Süper Lig/Basaksehir FK.png"
   },
   {
     "name": "Besiktas JK",
     "aliases": [
-      "Beşiktaş",
-      "Besiktas"
+      "Besiktas",
+      "BJK"
     ],
     "league": "Türkiye - Süper Lig",
     "logoAssetPath": "logos/Türkiye - Süper Lig/Besiktas JK.png"
@@ -2382,7 +2652,9 @@
   {
     "name": "Fenerbahce",
     "aliases": [
-      "Fenerbahçe"
+      "Fenerbahce SK",
+      "Fener",
+      "FB"
     ],
     "league": "Türkiye - Süper Lig",
     "logoAssetPath": "logos/Türkiye - Süper Lig/Fenerbahce.png"
@@ -2390,7 +2662,9 @@
   {
     "name": "Galatasaray",
     "aliases": [
-      "Galatasaray A.S."
+      "Galatasaray A.S.",
+      "Galatasaray SK",
+      "Gala"
     ],
     "league": "Türkiye - Süper Lig",
     "logoAssetPath": "logos/Türkiye - Süper Lig/Galatasaray.png"
@@ -2445,13 +2719,20 @@
   },
   {
     "name": "Trabzonspor",
-    "aliases": [],
+    "aliases": [
+      "Trabzon"
+    ],
     "league": "Türkiye - Süper Lig",
     "logoAssetPath": "logos/Türkiye - Süper Lig/Trabzonspor.png"
   },
   {
     "name": "Dynamo Kyiv",
-    "aliases": [],
+    "aliases": [
+      "Dinamo Kiev",
+      "Dynamo Kiev",
+      "Dinamo Kyiv",
+      "FC Dynamo Kyiv"
+    ],
     "league": "Ukraine - Premier Liga",
     "logoAssetPath": "logos/Ukraine - Premier Liga/Dynamo Kyiv.png"
   },
@@ -2535,7 +2816,10 @@
   },
   {
     "name": "Shakhtar Donetsk",
-    "aliases": [],
+    "aliases": [
+      "Shakhtar",
+      "FC Shakhtar"
+    ],
     "league": "Ukraine - Premier Liga",
     "logoAssetPath": "logos/Ukraine - Premier Liga/Shakhtar Donetsk.png"
   },

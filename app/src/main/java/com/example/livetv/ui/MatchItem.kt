@@ -55,6 +55,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.livetv.data.local.TeamMatcher
@@ -69,7 +71,8 @@ fun MatchItem(
     onExpand: () -> Unit = {},
     onCollapse: () -> Unit = {},
     collapsedFocusRequester: FocusRequester? = null,
-    forceUniformHeight: Boolean = false
+    forceUniformHeight: Boolean = false,
+    isFavourite: Boolean = false,
 ) {
     val context = LocalContext.current
 
@@ -129,12 +132,15 @@ fun MatchItem(
             else null
         ) {
             Row(modifier = Modifier.fillMaxSize()) {
-                // Left accent bar
+                // Left accent bar — gold for favourites, primary otherwise
                 Box(
                     modifier = Modifier
                         .width(4.dp)
                         .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(
+                            if (isFavourite) Color(0xFFFFB300)
+                            else MaterialTheme.colorScheme.primary
+                        )
                 )
                 Box(
                     modifier = Modifier
@@ -153,32 +159,47 @@ fun MatchItem(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        // Team logos — only rendered when the DB has an entry for at least one team
-                        val teamLogoData = remember(match.teams) {
+                        // Inline logos + team names side-by-side
+                        val teamParts = remember(match.teams) {
                             val parts = match.teams.split(" vs ", " v ", limit = 2)
-                            if (parts.size == 2) {
-                                val t1 = parts[0].trim()
-                                val t2 = parts[1].trim()
-                                if (TeamMatcher.lookupTeam(t1) != null || TeamMatcher.lookupTeam(t2) != null)
-                                    Pair(t1, t2)
-                                else null
-                            } else null
+                            if (parts.size == 2) Pair(parts[0].trim(), parts[1].trim()) else null
                         }
-                        if (teamLogoData != null) {
+                        if (teamParts != null) {
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                TeamLogo(teamLogoData.first,  size = 20.dp)
-                                TeamLogo(teamLogoData.second, size = 20.dp)
+                                TeamLogo(teamParts.first, size = 18.dp)
+                                Text(
+                                    text = teamParts.first,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "vs",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = teamParts.second,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TeamLogo(teamParts.second, size = 18.dp)
                             }
+                        } else {
+                            Text(
+                                text = match.teams.ifBlank { "Teams TBD" },
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 2
+                            )
                         }
-                        Text(
-                            text = match.teams.ifBlank { "Teams TBD" },
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 2
-                        )
                         if (timeAndLeague.isNotBlank()) {
                             Text(
                                 text = timeAndLeague,

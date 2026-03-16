@@ -25,6 +25,16 @@ import com.example.livetv.data.preferences.UrlPreferences
 import com.example.livetv.data.model.ScrapingSection
 import com.example.livetv.BuildConfig
 
+/**
+ * Result of fetching a match detail page: stream links plus optional scraped team logo URLs.
+ * Logo URLs are resolved to absolute HTTP(S) URLs ready to be loaded by Coil.
+ */
+data class StreamFetchResult(
+    val links: List<String>,
+    val homeLogoUrl: String? = null,
+    val awayLogoUrl: String? = null,
+)
+
 class Scraper(private val context: Context) {
 
     private val urlPreferences = UrlPreferences(context)
@@ -580,12 +590,12 @@ class Scraper(private val context: Context) {
      * Scrapes a single match detail page to find all available stream links.
      * Detects multiple stream types: Acestream, M3U8, RTMP, YouTube, Twitch, and other HTTP streams.
      */
-    suspend fun fetchStreamLinks(detailPageUrl: String): List<String> = withContext(Dispatchers.IO) {
+    suspend fun fetchStreamLinks(detailPageUrl: String): StreamFetchResult = withContext(Dispatchers.IO) {
         Log.d("Scraper", "Fetching stream links from: $detailPageUrl")
         
         try {
             val html = fetchHtmlWithOkHttp(detailPageUrl)
-            val doc = Jsoup.parse(html)
+            val doc = Jsoup.parse(html, detailPageUrl)
             val links = mutableSetOf<String>()
 
             // 1. Acestream links (P2P streaming)
@@ -717,12 +727,69 @@ class Scraper(private val context: Context) {
                     }
                 }}")
             }
-            
-            finalLinks
+
+            // Scrape team logo URLs from the match detail page.
+            // livetv.sx places team crests in the match header, typically inside
+            // td.team1/td.team2 or elements with class names containing "team".
+            // We try several selectors in priority order and take the first two
+            // non-blank img src values as home/away logos.
+            val (homeLogoUrl, awayLogoUrl) = scrapeTeamLogos(doc, pageOrigin)
+            if (BuildConfig.DEBUG) Log.d("Scraper", "Team logos — home: $homeLogoUrl  away: $awayLogoUrl")
+
+            StreamFetchResult(finalLinks, homeLogoUrl, awayLogoUrl)
         } catch (e: Exception) {
             Log.e("Scraper", "Error fetching stream links for $detailPageUrl", e)
-            emptyList()
+            StreamFetchResult(emptyList())
         }
+    }
+
+    /**
+     * Extracts the home and away team logo URLs from an already-parsed match detail page.
+     *
+     * livetv.sx renders team crests as:
+     *   <a href="/enx/team/…"><img itemprop="image" src="//cdn.livetv873.me/img/teams/…gif"></a>
+     *
+     * The primary selector targets exactly these elements (first = home, second = away).
+     * A secondary fallback matches any <img> whose src contains the known CDN teams path.
+     * Both selectors ignore the sport icon images scattered throughout the page header/sidebar.
+     *
+     * @param doc    Jsoup Document parsed with the base URI already set.
+     * @param origin Scheme+host (e.g. "https://livetv.sx") for resolving root-relative paths.
+     * @return Pair of (homeLogoUrl, awayLogoUrl); either may be null if not found.
+     */
+    private fun scrapeTeamLogos(doc: org.jsoup.nodes.Document, origin: String): Pair<String?, String?> {
+        fun resolveImgSrc(el: org.jsoup.nodes.Element?): String? {
+            el ?: return null
+            val src = el.attr("abs:src").ifBlank { el.attr("src") }
+            if (src.isBlank()) return null
+            return when {
+                src.startsWith("http://") || src.startsWith("https://") -> src
+                src.startsWith("//") -> "https:$src"
+                src.startsWith("/")  -> "$origin$src"
+                else                 -> "$origin/$src"
+            }
+        }
+
+        // Primary: team crest imgs with itemprop="image" inside a team profile link.
+        // These are precisely the two team logos on the match header — no false positives.
+        val teamImgs = doc.select("a[href*='/team/'] img[itemprop='image']")
+        if (teamImgs.size >= 2) {
+            return resolveImgSrc(teamImgs[0]) to resolveImgSrc(teamImgs[1])
+        }
+        if (teamImgs.size == 1) {
+            return resolveImgSrc(teamImgs[0]) to null
+        }
+
+        // Fallback: any img whose src path contains the known teams CDN directory.
+        val cdnImgs = doc.select("img[src*='/img/teams/']")
+        if (cdnImgs.size >= 2) {
+            return resolveImgSrc(cdnImgs[0]) to resolveImgSrc(cdnImgs[1])
+        }
+        if (cdnImgs.size == 1) {
+            return resolveImgSrc(cdnImgs[0]) to null
+        }
+
+        return null to null
     }
 
     /**

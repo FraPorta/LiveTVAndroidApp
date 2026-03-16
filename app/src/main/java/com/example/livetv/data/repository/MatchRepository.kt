@@ -3,6 +3,7 @@ package com.example.livetv.data.repository
 import android.content.Context
 import com.example.livetv.data.model.Match
 import com.example.livetv.data.network.Scraper
+import com.example.livetv.data.network.StreamFetchResult
 import com.example.livetv.data.model.ScrapingSection
 
 class MatchRepository(context: Context) {
@@ -20,9 +21,9 @@ class MatchRepository(context: Context) {
     }
 
     /**
-     * Fetches the stream links for a single match given its detail page URL.
+     * Fetches the stream links and scraped team logo URLs for a single match given its detail page URL.
      */
-    suspend fun getStreamLinks(detailPageUrl: String): List<String> {
+    suspend fun getStreamLinks(detailPageUrl: String): StreamFetchResult {
         return scraper.fetchStreamLinks(detailPageUrl)
     }
     

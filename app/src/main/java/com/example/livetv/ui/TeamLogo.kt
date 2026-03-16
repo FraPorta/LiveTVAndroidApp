@@ -14,17 +14,20 @@ import coil.request.ImageRequest
 import com.example.livetv.data.local.TeamMatcher
 
 /**
- * Displays the bundled logo for [teamName] if a matching [TeamEntry] exists in the
- * offline database. Renders nothing when no match is found, so callers never see
- * a broken image placeholder in the normal case.
+ * Displays the logo for [teamName].
  *
- * Logo files live in `assets/logos/<League>/<Team>.png` and are loaded by Coil
- * using the `file:///android_asset/…` URI scheme, which is cached in Coil's
- * in-memory LRU MemoryCache to avoid repeated asset decodes on every scroll frame.
+ * When a scraped [logoUrl] is provided it is loaded directly via Coil (remote or
+ * asset URI). If the URL fails, or when [logoUrl] is null, the composable falls
+ * back to the bundled offline asset database via [TeamMatcher].
+ * Renders nothing when neither source has a logo, so callers never see a broken
+ * image placeholder in the normal case.
  *
- * @param teamName Raw scraped team name (e.g. "Manchester United", "PSG").
- * @param size     Rendered size in dp (default 32 dp for match cards).
- * @param modifier Additional Compose modifiers.
+ * @param teamName  Raw scraped team name (e.g. "Manchester United", "PSG").
+ * @param logoUrl   Optional scraped logo URL (absolute http/https). When supplied
+ *                  this takes priority over the offline asset DB.
+ * @param size      Rendered size in dp (default 32 dp for match cards).
+ * @param leagueHint League key used to improve offline DB lookup accuracy.
+ * @param modifier  Additional Compose modifiers.
  */
 @Composable
 fun TeamLogo(
@@ -32,22 +35,44 @@ fun TeamLogo(
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     leagueHint: String = "",
+    logoUrl: String? = null,
 ) {
     val entry = remember(teamName, leagueHint) { TeamMatcher.lookupTeam(teamName, leagueHint) }
-    entry ?: return
+
+    // If we have neither a scraped URL nor an offline entry there is nothing to show.
+    if (logoUrl == null && entry == null) return
 
     val context = LocalContext.current
-    val model = remember(entry.logoAssetPath) {
-        ImageRequest.Builder(context)
-            .data(Uri.parse("file:///android_asset/${entry.logoAssetPath}"))
-            .memoryCacheKey(entry.logoAssetPath)
-            .build()
-    }
 
-    AsyncImage(
-        model            = model,
-        contentDescription = "${entry.name} logo",
-        modifier         = modifier.size(size),
-        contentScale     = ContentScale.Fit,
-    )
+    when {
+        logoUrl != null -> {
+            // Remote scraped URL — Coil loads it directly; shows nothing if the request fails.
+            val primaryModel = remember(logoUrl) {
+                ImageRequest.Builder(context)
+                    .data(logoUrl)
+                    .memoryCacheKey(logoUrl)
+                    .build()
+            }
+            AsyncImage(
+                model              = primaryModel,
+                contentDescription = "${entry?.name ?: teamName} logo",
+                modifier           = modifier.size(size),
+                contentScale       = ContentScale.Fit,
+            )
+        }
+        entry != null -> {
+            val model = remember(entry.logoAssetPath) {
+                ImageRequest.Builder(context)
+                    .data(Uri.parse("file:///android_asset/${entry.logoAssetPath}"))
+                    .memoryCacheKey(entry.logoAssetPath)
+                    .build()
+            }
+            AsyncImage(
+                model              = model,
+                contentDescription = "${entry.name} logo",
+                modifier           = modifier.size(size),
+                contentScale       = ContentScale.Fit,
+            )
+        }
+    }
 }

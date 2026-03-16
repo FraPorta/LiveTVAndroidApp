@@ -10,7 +10,9 @@ data class Match(
     val detailPageUrl: String, // URL to the page with the stream links
     val country: String = "",  // Country owning this league (e.g. "England"), used for flag + qualified key
     val streamLinks: List<String> = emptyList(),
-    val areLinksLoading: Boolean = false
+    val areLinksLoading: Boolean = false,
+    val homeLogoUrl: String? = null,
+    val awayLogoUrl: String? = null,
 ) {
     /** Qualified league key aligned with TeamEntry.league, e.g. "England - Premier League". */
     val qualifiedLeagueKey: String get() =

@@ -159,7 +159,7 @@ fun MatchItem(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                TeamLogo(teamParts.first, size = 18.dp, leagueHint = match.qualifiedLeagueKey)
+                                TeamLogo(teamParts.first, size = 18.dp, leagueHint = match.qualifiedLeagueKey, logoUrl = match.homeLogoUrl)
                                 Text(
                                     text = teamParts.first,
                                     style = MaterialTheme.typography.titleSmall,
@@ -180,7 +180,7 @@ fun MatchItem(
                                     textAlign = TextAlign.End,
                                     modifier = Modifier.weight(1f)
                                 )
-                                TeamLogo(teamParts.second, size = 18.dp, leagueHint = match.qualifiedLeagueKey)
+                                TeamLogo(teamParts.second, size = 18.dp, leagueHint = match.qualifiedLeagueKey, logoUrl = match.awayLogoUrl)
                             }
                         } else {
                             Text(
@@ -299,7 +299,7 @@ fun MatchItem(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            TeamLogo(expandedParts[0], size = 20.dp, leagueHint = match.qualifiedLeagueKey)
+                            TeamLogo(expandedParts[0], size = 20.dp, leagueHint = match.qualifiedLeagueKey, logoUrl = match.homeLogoUrl)
                             IconButton(
                                 onClick = { viewModel.toggleFavouriteTeam(canonical0) },
                                 modifier = Modifier.size(28.dp)
@@ -342,7 +342,7 @@ fun MatchItem(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
-                            TeamLogo(expandedParts[1], size = 20.dp, leagueHint = match.qualifiedLeagueKey)
+                            TeamLogo(expandedParts[1], size = 20.dp, leagueHint = match.qualifiedLeagueKey, logoUrl = match.awayLogoUrl)
                         }
                     } else {
                         Text(

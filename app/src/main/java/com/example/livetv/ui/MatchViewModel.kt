@@ -311,7 +311,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             val updates = results.associate { (url, result) ->
                 val original = batchByUrl[url]!!
                 url to result.fold(
-                    onSuccess = { links -> original.copy(streamLinks = links, areLinksLoading = false) },
+                    onSuccess = { r -> original.copy(streamLinks = r.links, areLinksLoading = false, homeLogoUrl = r.homeLogoUrl ?: original.homeLogoUrl, awayLogoUrl = r.awayLogoUrl ?: original.awayLogoUrl) },
                     onFailure = { original.copy(areLinksLoading = false) }
                 )
             }
@@ -427,10 +427,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             updateMatchInList(match.copy(areLinksLoading = true, streamLinks = emptyList()))
 
             try {
-                val links = repository.getStreamLinks(match.detailPageUrl)
-                Log.d("ViewModel", "Refreshed ${links.size} links for ${match.teams}")
-                // Update match with refreshed links
-                updateMatchInList(match.copy(streamLinks = links, areLinksLoading = false))
+                val result = repository.getStreamLinks(match.detailPageUrl)
+                Log.d("ViewModel", "Refreshed ${result.links.size} links for ${match.teams}")
+                // Update match with refreshed links and any newly scraped logos
+                updateMatchInList(match.copy(
+                    streamLinks = result.links,
+                    areLinksLoading = false,
+                    homeLogoUrl = result.homeLogoUrl ?: match.homeLogoUrl,
+                    awayLogoUrl = result.awayLogoUrl ?: match.awayLogoUrl,
+                ))
             } catch (e: Exception) {
                 Log.e("ViewModel", "Error refreshing links for ${match.teams}", e)
                 // Restore the match without loading state but keep existing links

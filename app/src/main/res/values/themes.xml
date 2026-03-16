@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.LiveTV" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- DayNight base: window background matches Compose dark theme on older APIs
+         to prevent white flash during app launch. -->
+    <style name="Theme.LiveTV" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
 </resources>

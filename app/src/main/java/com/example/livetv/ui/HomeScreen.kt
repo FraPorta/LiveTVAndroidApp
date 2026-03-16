@@ -6,8 +6,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -248,7 +248,10 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 ) {
                                     Text(text = "Error: $errorMessage")
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Button(onClick = { viewModel.loadInitialMatchList() }) {
+                                    Button(
+                                        onClick = { viewModel.loadInitialMatchList() },
+                                        modifier = Modifier.focusable(),
+                                    ) {
                                         Text(text = "Retry")
                                     }
                                 }
@@ -262,7 +265,10 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                 ) {
                                     Text(text = "No matches found.")
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Button(onClick = { viewModel.loadInitialMatchList() }) {
+                                    Button(
+                                        onClick = { viewModel.loadInitialMatchList() },
+                                        modifier = Modifier.focusable(),
+                                    ) {
                                         Text(text = "Refresh")
                                     }
                                 }
@@ -302,26 +308,20 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     // Only show "Load More" button when search is not active
                                     if (!viewModel.isSearchActive.value) {
                                         item(span = { GridItemSpan(maxLineSpan) }) {
-                                            // Modern "Load More" button - spans all columns and centered
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .padding(vertical = 16.dp),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(
-                                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                                            shape = RoundedCornerShape(16.dp)
-                                                        )
-                                                        .clickable { viewModel.loadMoreMatches() }
-                                                        .padding(horizontal = 32.dp, vertical = 12.dp)
+                                                OutlinedButton(
+                                                    onClick   = { viewModel.loadMoreMatches() },
+                                                    modifier  = Modifier.focusable(),
+                                                    shape     = MaterialTheme.shapes.small,
                                                 ) {
                                                     Text(
                                                         "Load More Matches",
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        style = MaterialTheme.typography.labelLarge,
                                                     )
                                                 }
                                             }
@@ -383,17 +383,16 @@ fun ActionButtons(
         label = "spinRotation"
     )
 
-    Box(
-        modifier = modifier
-            .background(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(16.dp)
-            )
-            .padding(12.dp)
+    Surface(
+        modifier       = modifier,
+        color          = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape          = MaterialTheme.shapes.medium,
+        tonalElevation = 3.dp,
     ) {
         Row(
+            modifier              = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically,
         ) {
             // Search button
             FocusableButton(
@@ -450,16 +449,16 @@ fun ActionButtons(
             
             // Update button
             FocusableButton(
-                onClick = onShowUpdateDialog,
-                backgroundColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-                focusColor = MaterialTheme.colorScheme.primary
+                onClick         = onShowUpdateDialog,
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor    = MaterialTheme.colorScheme.onSecondaryContainer,
+                focusColor      = MaterialTheme.colorScheme.primary,
             ) {
                 Icon(
-                    imageVector = Icons.Default.Info,
+                    imageVector        = Icons.Default.Info,
                     contentDescription = "Check for Updates",
-                    tint = MaterialTheme.colorScheme.onSecondary,
-                    modifier = Modifier.size(20.dp)
+                    tint               = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier           = Modifier.size(20.dp),
                 )
             }
         }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.livetv.data.model.Match
+import com.example.livetv.ui.theme.BadgeTextStyle
 
 @Composable
 fun MatchItem(
@@ -109,31 +112,36 @@ fun MatchItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(96.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(
-                defaultElevation = if (isFocused) 8.dp else 4.dp
+                defaultElevation = if (isFocused) 8.dp else 2.dp
             ),
             colors = CardDefaults.cardColors(
-                containerColor = if (isFocused)
-                    MaterialTheme.colorScheme.surfaceVariant
-                else
-                    MaterialTheme.colorScheme.surface
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             ),
             border = if (isFocused)
                 BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
             else null
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (collapsedFocusRequester != null) Modifier.focusRequester(collapsedFocusRequester) else Modifier)
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = onExpand
-                    )
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Left accent bar
+                Box(
+                    modifier = Modifier
+                        .width(4.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (collapsedFocusRequester != null) Modifier.focusRequester(collapsedFocusRequester) else Modifier)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onExpand
+                        )
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
                 Row(
                     modifier = Modifier.fillMaxSize(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -167,17 +175,14 @@ fun MatchItem(
                             modifier = Modifier
                                 .background(
                                     color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(8.dp)
+                                    shape = MaterialTheme.shapes.extraSmall
                                 )
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "${match.streamLinks.size}",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
-                                ),
+                                style = BadgeTextStyle,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
@@ -185,16 +190,17 @@ fun MatchItem(
                 }
             }
         }
+        }   // end Card
     } else {
         // ── Expanded card (full stream detail view) ───────────────────────
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 420.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = MaterialTheme.shapes.medium,
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface
             ),
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
@@ -266,6 +272,11 @@ fun MatchItem(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(
+                    modifier  = Modifier.padding(bottom = 8.dp),
+                    thickness = 1.dp,
+                    color     = MaterialTheme.colorScheme.outlineVariant,
+                )
 
                 // Streams section
                 when {
@@ -298,7 +309,7 @@ fun MatchItem(
                                         modifier = Modifier
                                             .background(
                                                 color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = RoundedCornerShape(8.dp)
+                                                shape = MaterialTheme.shapes.extraSmall
                                             )
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
@@ -357,7 +368,7 @@ fun MatchItem(
                                         modifier = Modifier
                                             .background(
                                                 color = MaterialTheme.colorScheme.secondaryContainer,
-                                                shape = RoundedCornerShape(8.dp)
+                                                shape = MaterialTheme.shapes.extraSmall
                                             )
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
@@ -442,29 +453,33 @@ fun MatchItem(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 2.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Button(
+                            TextButton(
                                 onClick = {
                                     openUrlWithChooser(context, link)
                                     showAceStreamDialog = false
                                 },
-                                modifier = Modifier.height(36.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                )
                             ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "ACE ${index + 1}",
-                                    style = MaterialTheme.typography.labelSmall
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                             Text(
                                 text = link.take(50) + if (link.length > 50) "..." else "",
                                 style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -501,29 +516,33 @@ fun MatchItem(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 2.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Button(
+                            TextButton(
                                 onClick = {
                                     openUrlWithChooser(context, link)
                                     showWebStreamDialog = false
                                 },
-                                modifier = Modifier.height(36.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondary,
-                                    contentColor = MaterialTheme.colorScheme.onSecondary
-                                )
                             ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = streamLabel,
-                                    style = MaterialTheme.typography.labelSmall
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.tertiary,
                                 )
                             }
                             Text(
                                 text = link.take(50) + if (link.length > 50) "..." else "",
                                 style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f)
                             )
                         }

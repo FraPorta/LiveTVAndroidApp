@@ -193,8 +193,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         
         // Try to restore cached data for the new section
         if (restoreSectionData(section)) {
-            // We have cached data, refresh the visible matches with existing data
-            refreshVisibleMatches()
+            // We have cached data; recompute favourite URLs against this section's
+            // allMatches so pinning always reflects the restored data set.
+            recomputeFavouriteMatchUrls()
         } else {
             // No cached data, load fresh data
             loadInitialMatchList()
@@ -608,6 +609,11 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // Update filter options with the complete list
                 updateFilterOptionsFromCurrentMatches()
+
+                // Re-pin favourites now that allMatches contains the full set — without
+                // this, matches that appear beyond the initial page are never marked as
+                // favourites until the user switches tabs or toggles a favourite manually.
+                recomputeFavouriteMatchUrls()
                 
                 Log.d("ViewModel", "Background scraping updated match list: ${allMatches.size} total matches available for search")
                 

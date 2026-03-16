@@ -36,6 +36,10 @@ class Scraper(private val context: Context) {
         OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            // Increase pool to 20 so the burst of concurrent stream-link fetches
+            // (up to 16 at initial load) all run in true parallel rather than
+            // queuing against the OkHttp default of 5 connections.
+            .connectionPool(okhttp3.ConnectionPool(20, 5, java.util.concurrent.TimeUnit.MINUTES))
             .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
             .hostnameVerifier { hostname, _ ->
                 val allowedHost = try {

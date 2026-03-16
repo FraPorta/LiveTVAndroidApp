@@ -236,7 +236,7 @@ fun MatchItem(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface
             ),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            border = BorderStroke(2.dp, if (isFavourite) Color(0xFFFFB300) else MaterialTheme.colorScheme.primary)
         ) {
             Column(
                 modifier = Modifier

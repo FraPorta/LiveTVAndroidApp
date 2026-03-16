@@ -199,7 +199,7 @@ fun MatchItem(
                         }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    // Right-side status badge
+                    // Right-side status badges — stacked: Acestream on top, Web below
                     when {
                         match.areLinksLoading -> SpinningIcon(
                             imageVector = Icons.Default.Refresh,
@@ -207,20 +207,44 @@ fun MatchItem(
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp)
                         )
-                        match.streamLinks.isNotEmpty() -> Box(
-                            modifier = Modifier
-                                .background(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = MaterialTheme.shapes.extraSmall
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            contentAlignment = Alignment.Center
+                        match.streamLinks.isNotEmpty() -> Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text(
-                                text = "${match.streamLinks.size}",
-                                style = BadgeTextStyle,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            if (aceStreamLinks.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            shape = MaterialTheme.shapes.extraSmall
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "A ${aceStreamLinks.size}",
+                                        style = BadgeTextStyle,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                            if (webStreamLinks.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = MaterialTheme.shapes.extraSmall
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "W ${webStreamLinks.size}",
+                                        style = BadgeTextStyle,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
                         }
                     }
                 }

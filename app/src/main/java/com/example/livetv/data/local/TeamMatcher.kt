@@ -68,10 +68,14 @@ object TeamMatcher {
 
         // 3. Substring fallback: pick the LONGEST matching candidate (more specific = better).
         //    Same-league entries get a large bonus so they win over longer foreign names.
+        //    Without a confirming leagueHint, the matched token must cover ≥60% of the
+        //    query length to reject e.g. "inter" (5) matching "inter baku" (10) → ratio 0.50.
         val LEAGUE_BONUS = 1000
+        val MIN_RATIO = 0.60f
         return normalizedEntries
             .mapNotNull { ne ->
                 val en = ne.normalizedName
+                val sameLeague = leagueHint.isNotBlank() && ne.entry.league == leagueHint
                 val rawLen = when {
                     en.length >= 4 && n.contains(en) -> en.length
                     en.length >= 4 && en.contains(n) -> n.length
@@ -83,7 +87,9 @@ object TeamMatcher {
                         }
                     }.maxOrNull()
                 } ?: return@mapNotNull null
-                val score = rawLen + if (leagueHint.isNotBlank() && ne.entry.league == leagueHint) LEAGUE_BONUS else 0
+                // Reject low-ratio substring matches unless the leagueHint confirms this entry
+                if (!sameLeague && rawLen.toFloat() / maxOf(n.length, 1) < MIN_RATIO) return@mapNotNull null
+                val score = rawLen + if (sameLeague) LEAGUE_BONUS else 0
                 ne.entry to score
             }
             .maxByOrNull { (_, score) -> score }
@@ -115,9 +121,10 @@ object TeamMatcher {
      * Attempts to determine the league for a match by looking up the teams in the DB
      * rather than by keyword-matching competition text.
      *
-     * - If both teams resolve to the **same** league → high-confidence result.
-     * - If only one team resolves → best-effort result.
-     * - If neither resolves → returns null.
+     * - If **both** teams resolve to the **same** league → high-confidence result.
+     * - Any other case (only one resolves, or the two disagree) → returns null so
+     *   the caller falls back to competition-text keyword matching rather than
+     *   propagating a wrong league association.
      *
      * No [leagueHint] is used here because we ARE resolving the hint.
      */
@@ -127,33 +134,18 @@ object TeamMatcher {
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
+        if (parts.size < 2) return null
+
         val entries = parts.mapNotNull { lookupTeam(it) }
-        if (entries.isEmpty()) return null
 
-        fun qualifiedToResolution(qualified: String, bothMatched: Boolean): LeagueResolution {
+        // Only confident when both teams are recognised AND agree on the same league
+        if (entries.size == 2 && entries[0].league == entries[1].league) {
+            val qualified = entries[0].league
             val country = if (qualified.contains(" - ")) qualified.substringBefore(" - ") else ""
-            return LeagueResolution(country, qualified, bothMatched)
+            return LeagueResolution(country, qualified, bothMatched = true)
         }
 
-        // Both teams resolved
-        if (entries.size == 2) {
-            return if (entries[0].league == entries[1].league) {
-                qualifiedToResolution(entries[0].league, bothMatched = true)
-            } else {
-                // Disagreement: pick the entry whose name normalized length is closer to the
-                // scraped part length (i.e. the better name match).
-                val lengths = parts.zip(entries).map { (raw, entry) ->
-                    val n = TeamDatabase.normalize(raw)
-                    val en = TeamDatabase.normalize(entry.name)
-                    minOf(n.length, en.length)
-                }
-                val winner = if (lengths[0] >= lengths[1]) entries[0] else entries[1]
-                qualifiedToResolution(winner.league, bothMatched = false)
-            }
-        }
-
-        // Only one team resolved
-        return qualifiedToResolution(entries[0].league, bothMatched = false)
+        return null
     }
 
     /**

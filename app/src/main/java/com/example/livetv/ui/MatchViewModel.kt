@@ -350,9 +350,23 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         
         // Apply search filter if active
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
-            val searchText = searchQuery.value.lowercase().trim()
-            // Use pre-computed searchableText to avoid per-call string allocation
-            filtered = filtered.filter { match -> match.searchableText.contains(searchText) }
+            val searchText = searchQuery.value.trim()
+            // If the query resolves to a known team via the same fuzzy lookup used by
+            // favourites, use that instead of a plain contains() so aliases are handled.
+            val targetEntry = TeamMatcher.lookupTeam(searchText)
+            filtered = if (targetEntry != null) {
+                filtered.filter { match ->
+                    val parts = match.teams.split(" vs ", " v ", " – ", " — ", " - ", limit = 2)
+                    parts.any { part ->
+                        val resolved = TeamMatcher.lookupTeam(part.trim(), match.qualifiedLeagueKey)
+                        resolved != null && resolved.name == targetEntry.name
+                    }
+                }
+            } else {
+                // Free-text fallback: use pre-computed searchableText
+                val lowerText = searchText.lowercase()
+                filtered.filter { match -> match.searchableText.contains(lowerText) }
+            }
         }
         
         return filtered

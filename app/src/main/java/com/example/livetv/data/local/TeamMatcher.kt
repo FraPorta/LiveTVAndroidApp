@@ -31,27 +31,43 @@ object TeamMatcher {
 
         val all = TeamDatabase.getAllTeams()
         // 2. Prefix: the DB canonical name starts with the query, or the query
-        //    starts with the canonical name (e.g. "Arsenal" finds "Arsenal FC")
+        //    starts with the canonical name (e.g. "Arsenal" finds "Arsenal FC").
+        //    Require that the shorter string covers >= 75 % of the longer one to
+        //    avoid short names (e.g. "Arsenal") matching long queries
+        //    (e.g. "Arsenal Tula") by accident.
         all.firstOrNull { entry ->
             val en = TeamDatabase.normalize(entry.name)
-            en.startsWith(n) || n.startsWith(en) ||
-                    entry.aliases.any { alias ->
-                        val an = TeamDatabase.normalize(alias)
-                        an.startsWith(n) || n.startsWith(an)
-                    }
+            fun prefixMatch(a: String, b: String): Boolean {
+                if (!a.startsWith(b) && !b.startsWith(a)) return false
+                val ratio = minOf(a.length, b.length).toFloat() / maxOf(a.length, b.length, 1)
+                return ratio >= 0.75f
+            }
+            prefixMatch(en, n) ||
+                    entry.aliases.any { alias -> prefixMatch(TeamDatabase.normalize(alias), n) }
         }?.let { return it }
 
-        // 3. Substring fallback (broader, but lower quality — take shortest match)
+        // 3. Substring fallback: the query must contain the DB name (or alias) as a
+        //    whole word-ish token, and the matched portion must be >= 4 chars.
+        //    Pick the LONGEST matching candidate (more specific = better).
         return all
-            .filter { entry ->
+            .mapNotNull { entry ->
                 val en = TeamDatabase.normalize(entry.name)
-                en.contains(n) || n.contains(en) ||
-                        entry.aliases.any { alias ->
-                            val an = TeamDatabase.normalize(alias)
-                            an.contains(n) || n.contains(an)
+                val matchLen = when {
+                    en.length >= 4 && n.contains(en) -> en.length
+                    en.length >= 4 && en.contains(n) -> n.length
+                    else -> entry.aliases.mapNotNull { alias ->
+                        val an = TeamDatabase.normalize(alias)
+                        when {
+                            an.length >= 4 && n.contains(an) -> an.length
+                            an.length >= 4 && an.contains(n) -> n.length
+                            else -> null
                         }
+                    }.maxOrNull()
+                }
+                if (matchLen != null) entry to matchLen else null
             }
-            .minByOrNull { TeamDatabase.normalize(it.name).length }
+            .maxByOrNull { (_, len) -> len }
+            ?.first
     }
 
     /**

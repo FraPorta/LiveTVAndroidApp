@@ -94,22 +94,8 @@ fun MatchItem(
         }
     }
 
-    // Build the time + league summary string (used in both layouts)
-    val timeAndLeague = buildString {
-        if (match.time.isNotBlank()) append("⏰ ${match.time}")
-        val leagueInfo = when {
-            match.league.isNotBlank() && match.competition.isNotBlank() ->
-                if (match.league.equals(match.competition, ignoreCase = true)) match.league
-                else "${match.league} - ${match.competition}"
-            match.league.isNotBlank() -> match.league
-            match.competition.isNotBlank() -> match.competition
-            else -> ""
-        }
-        if (leagueInfo.isNotBlank()) {
-            if (isNotEmpty()) append(" • ")
-            append("🏆 $leagueInfo")
-        }
-    }
+    // Build the time display string (used in both layouts)
+    val timeDisplay = if (match.time.isNotBlank()) "⏰ ${match.time}" else ""
 
     if (!isExpanded) {
         // ── Collapsed card ────────────────────────────────────────────────
@@ -161,7 +147,7 @@ fun MatchItem(
                     Column(modifier = Modifier.weight(1f)) {
                         // Inline logos + team names side-by-side
                         val teamParts = remember(match.teams) {
-                            val parts = match.teams.split(" vs ", " v ", limit = 2)
+                            val parts = match.teams.split(" vs ", " v ", " – ", " — ", " - ", limit = 2)
                             if (parts.size == 2) Pair(parts[0].trim(), parts[1].trim()) else null
                         }
                         if (teamParts != null) {
@@ -200,9 +186,9 @@ fun MatchItem(
                                 maxLines = 2
                             )
                         }
-                        if (timeAndLeague.isNotBlank()) {
+                        if (timeDisplay.isNotBlank()) {
                             Text(
-                                text = timeAndLeague,
+                                text = timeDisplay,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
@@ -258,123 +244,175 @@ fun MatchItem(
                     .verticalScroll(rememberScrollState())
                     .padding(if (hasBothTypes) 12.dp else 16.dp)
             ) {
-                // Header: teams + interactive refresh button
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Text(
-                        text = match.teams.ifBlank { "Teams TBD" },
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        minLines = 2
-                    )
-                    FocusableButton(
-                        onClick = { viewModel.refreshMatchLinks(match) },
-                        backgroundColor = if (match.areLinksLoading)
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                        else
-                            MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (match.areLinksLoading)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        focusColor = MaterialTheme.colorScheme.primary,
-                        // Auto-focus refresh button when no streams are available yet
-                        modifier = if (match.streamLinks.isEmpty() && !match.areLinksLoading)
-                            Modifier.size(36.dp).focusRequester(firstButtonFocusRequester)
-                        else
-                            Modifier.size(36.dp)
-                    ) {
-                        if (match.areLinksLoading) {
-                            SpinningIcon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Loading",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh Links",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (timeAndLeague.isNotBlank()) {
-                    Text(
-                        text = timeAndLeague,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = if (hasBothTypes) 4.dp else 6.dp),
-                        maxLines = 2
-                    )
-                }
-
-                // ── Favourites row (team stars + league star) ─────────────────────────────
+                // Unified header: [Logo][⭐] Team1  vs  Team2 [⭐][Logo]  |  league ⭐ label  refresh
                 val expandedParts = remember(match.teams) {
-                    match.teams.split(" vs ", " v ", limit = 2).map { it.trim() }.filter { it.isNotBlank() }
+                    match.teams.split(" vs ", " v ", " – ", " — ", " - ", limit = 2).map { it.trim() }.filter { it.isNotBlank() }
                 }
                 val favTeams by viewModel.favouriteTeams
+                val favLeagues by viewModel.favouriteLeagues
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    expandedParts.forEach { rawTeam ->
-                        val canonical = remember(rawTeam) {
-                            TeamMatcher.lookupTeam(rawTeam)?.name ?: rawTeam
+                    // Teams section with logos and favourite stars
+                    if (expandedParts.size == 2) {
+                        val canonical0 = remember(expandedParts[0]) {
+                            TeamMatcher.lookupTeam(expandedParts[0])?.name ?: expandedParts[0]
                         }
-                        val isFav = canonical in favTeams
+                        val canonical1 = remember(expandedParts[1]) {
+                            TeamMatcher.lookupTeam(expandedParts[1])?.name ?: expandedParts[1]
+                        }
+                        val isFav0 = canonical0 in favTeams
+                        val isFav1 = canonical1 in favTeams
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            TeamLogo(rawTeam, size = 18.dp)
+                            TeamLogo(expandedParts[0], size = 20.dp)
                             IconButton(
-                                onClick = { viewModel.toggleFavouriteTeam(canonical) },
+                                onClick = { viewModel.toggleFavouriteTeam(canonical0) },
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (isFav) Icons.Filled.Star else Icons.Outlined.Star,
-                                    contentDescription = if (isFav) "Unfavourite $canonical" else "Favourite $canonical",
-                                    tint = if (isFav) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    imageVector = if (isFav0) Icons.Filled.Star else Icons.Outlined.Star,
+                                    contentDescription = if (isFav0) "Unfavourite $canonical0" else "Favourite $canonical0",
+                                    tint = if (isFav0) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Text(
+                                text = expandedParts[0],
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "vs",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = expandedParts[1],
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { viewModel.toggleFavouriteTeam(canonical1) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isFav1) Icons.Filled.Star else Icons.Outlined.Star,
+                                    contentDescription = if (isFav1) "Unfavourite $canonical1" else "Favourite $canonical1",
+                                    tint = if (isFav1) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            TeamLogo(expandedParts[1], size = 20.dp)
+                        }
+                    } else {
+                        Text(
+                            text = match.teams.ifBlank { "Teams TBD" },
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2
+                        )
+                    }
+                    // Right section: refresh button only
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        FocusableButton(
+                            onClick = { viewModel.refreshMatchLinks(match) },
+                            backgroundColor = if (match.areLinksLoading)
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (match.areLinksLoading)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            focusColor = MaterialTheme.colorScheme.primary,
+                            // Auto-focus refresh button when no streams are available yet
+                            modifier = if (match.streamLinks.isEmpty() && !match.areLinksLoading)
+                                Modifier.size(36.dp).focusRequester(firstButtonFocusRequester)
+                            else
+                                Modifier.size(36.dp)
+                        ) {
+                            if (match.areLinksLoading) {
+                                SpinningIcon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Loading",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh Links",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
                     }
-                    // League star (if league is non-blank)
-                    if (match.league.isNotBlank()) {
-                        val favLeagues by viewModel.favouriteLeagues
-                        val isLeagueFav = match.league in favLeagues
-                        Spacer(modifier = Modifier.weight(1f))
-                        IconButton(
-                            onClick = { viewModel.toggleFavouriteLeague(match.league) },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isLeagueFav) Icons.Filled.Star else Icons.Outlined.Star,
-                                contentDescription = if (isLeagueFav) "Unfavourite ${match.league}" else "Favourite ${match.league}",
-                                tint = if (isLeagueFav) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
+                }
+
+                // Second line: time + league star + league label
+                val hasTimeOrLeague = timeDisplay.isNotBlank() || match.league.isNotBlank()
+                if (hasTimeOrLeague) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = if (hasBothTypes) 4.dp else 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (timeDisplay.isNotBlank()) {
+                            Text(
+                                text = timeDisplay,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
                             )
                         }
-                        Text(
-                            text = match.league,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
+                        if (match.league.isNotBlank()) {
+                            val isLeagueFav = match.league in favLeagues
+                            if (timeDisplay.isNotBlank()) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { viewModel.toggleFavouriteLeague(match.league) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isLeagueFav) Icons.Filled.Star else Icons.Outlined.Star,
+                                    contentDescription = if (isLeagueFav) "Unfavourite ${match.league}" else "Favourite ${match.league}",
+                                    tint = if (isLeagueFav) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Text(
+                                text = match.league,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
                 HorizontalDivider(

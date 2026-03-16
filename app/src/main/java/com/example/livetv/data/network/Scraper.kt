@@ -413,8 +413,9 @@ class Scraper(private val context: Context) {
                 val teamResolution = com.example.livetv.data.local.TeamMatcher.resolveLeagueFromTeams(teams)
                 if (teamResolution != null) {
                     country = teamResolution.country
-                    // If we have a high-confidence match and league is still blank, fill it in
-                    if (league.isBlank() && teamResolution.bothMatched) {
+                    // Fill in league from DB resolution whenever it is blank,
+                    // regardless of bothMatched — avoids blank league on partial matches.
+                    if (league.isBlank()) {
                         val q = teamResolution.qualifiedKey
                         league = if (q.contains(" - ")) q.substringAfter(" - ") else q
                     }

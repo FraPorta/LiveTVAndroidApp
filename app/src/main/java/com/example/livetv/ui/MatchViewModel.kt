@@ -325,7 +325,8 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             
             val leagueMatches = selectedLeague.value == null || 
                                selectedLeague.value == "All Leagues" || 
-                               match.league == selectedLeague.value
+                               match.league == selectedLeague.value ||
+                               match.qualifiedLeagueKey == selectedLeague.value
             
             sportMatches && leagueMatches
         }
@@ -339,7 +340,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
             val searchText = searchQuery.value.lowercase().trim()
             filtered = filtered.filter { match ->
-                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
+                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.qualifiedLeagueKey} ${match.country} ${match.sport}".lowercase()
                 matchText.contains(searchText)
             }
         }

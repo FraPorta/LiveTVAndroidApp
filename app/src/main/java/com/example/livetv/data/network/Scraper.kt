@@ -25,6 +25,16 @@ import com.example.livetv.data.preferences.UrlPreferences
 import com.example.livetv.data.model.ScrapingSection
 import com.example.livetv.BuildConfig
 
+/**
+ * Result of fetching a match detail page: stream links plus optional scraped team logo URLs.
+ * Logo URLs are resolved to absolute HTTP(S) URLs ready to be loaded by Coil.
+ */
+data class StreamFetchResult(
+    val links: List<String>,
+    val homeLogoUrl: String? = null,
+    val awayLogoUrl: String? = null,
+)
+
 class Scraper(private val context: Context) {
 
     private val urlPreferences = UrlPreferences(context)
@@ -36,6 +46,10 @@ class Scraper(private val context: Context) {
         OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            // Increase pool to 20 so the burst of concurrent stream-link fetches
+            // (up to 16 at initial load) all run in true parallel rather than
+            // queuing against the OkHttp default of 5 connections.
+            .connectionPool(okhttp3.ConnectionPool(20, 5, java.util.concurrent.TimeUnit.MINUTES))
             .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
             .hostnameVerifier { hostname, _ ->
                 val allowedHost = try {
@@ -57,16 +71,42 @@ class Scraper(private val context: Context) {
     private val HTML_CACHE_TTL_MS = 60_000L // 60 seconds
 
     companion object {
-        // FIX #17: Pre-compiled regex, reused across all JS-scanning calls in fetchStreamLinks
-        // instead of being rebuilt on every iteration of the scriptTags forEach loop.
+        // Pre-compiled regexes — avoids recompiling the same patterns on every fetchStreamLinks call.
         private val JS_URL_REGEX = """https?://[^\s"'<>]+(?:\.m3u8|stream|live|watch|player)""".toRegex(RegexOption.IGNORE_CASE)
+        private val ACESTREAM_REGEX = "acestream://[a-zA-Z0-9]+".toRegex()
+        private val M3U8_REGEX = """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE)
+        private val RTMP_REGEX = """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE)
+        private val WEBPLAYER_REGEX = """(?:https?:)?//[^\s"'<>]+webplayer[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
 
         // FIX #27: Single source of truth for football-related keywords.
         // Previously hard-coded twice (in scrapeMatchList and scrapeAllMatches), now referenced
         // from both call sites so a future keyword addition only needs one change.
+        /**
+         * Detects a date-like substring in a table row's text (e.g. "16 March 2026", "March 16").
+         * Used by [findDateForRow] to identify schedule-header rows.
+         */
+        private val DATE_HEADER_REGEX = Regex("""
+            \b\d{1,2}\s+[A-Za-z]{3,9}(?:\s+\d{4})?\b   # 16 March | 16 March 2026
+            |\b[A-Za-z]{3,9}\s+\d{1,2}(?:,\s*\d{4})?\b  # March 16 | March 16, 2026
+        """.trimIndent(), setOf(RegexOption.COMMENTS, RegexOption.IGNORE_CASE))
+        private val RELATIVE_DATE_REGEX = Regex("""
+            \b(?:today|tomorrow|yesterday)\b
+        """.trimIndent(), setOf(RegexOption.COMMENTS, RegexOption.IGNORE_CASE))
+
         val FOOTBALL_KEYWORDS: Set<String> = setOf(
             "football", "soccer", "premier", "liga", "bundesliga", "serie a",
             "ligue", "champions league", "europa league", "uefa", "fifa", "world cup"
+        )
+
+        /** Competitions that span multiple countries — country should be "Europe" or "World". */
+        private val CROSS_BORDER_LEAGUES: Set<String> = setOf(
+            "champions league", "europa league", "conference league",
+            "uefa super cup", "world cup", "european championship", "euros",
+            "nations league", "olympic", "copa america", "africa cup", "afcon",
+            "copa del rey", "fa cup", "dfb pokal", "coupe de france"
+        )
+        private val WORLD_COMPETITIONS: Set<String> = setOf(
+            "world cup", "copa america", "africa cup", "afcon", "olympic"
         )
     }
 
@@ -141,7 +181,7 @@ class Scraper(private val context: Context) {
         ScrapingSection.FOOTBALL -> {
             val copy = doc.clone()
             copy.select("#upcoming").remove()
-            Log.d("Scraper", "Using document minus #upcoming for Football section")
+            Log.d("Scraper", "Using document minus #upcoming for ${section.displayName} section")
             copy
         }
     }
@@ -218,7 +258,7 @@ class Scraper(private val context: Context) {
                     competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2
                 if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
                     val tmp = teams; teams = competition; competition = tmp
-                    Log.d("Scraper", "Swapped teams/competition — Teams: '$teams', Competition: '$competition'")
+                    if (BuildConfig.DEBUG) Log.d("Scraper", "Swapped teams/competition — Teams: '$teams', Competition: '$competition'")
                 }
             }
 
@@ -242,14 +282,29 @@ class Scraper(private val context: Context) {
             }
 
             teams = cleanTeamNames(teams, time, competition)
-            val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
+            val (sport, league, country) = extractSportAndLeague(competition, teams, row, detailPageUrl)
 
-            Log.d("Scraper", "Raw: Time='$time' Teams='$teams' Competition='$competition'")
-            Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league'")
+            if (BuildConfig.DEBUG) {
+                Log.d("Scraper", "Raw: Time='$time' Teams='$teams' Competition='$competition'")
+                Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league' Country='$country'")
+            }
+
+            // The upcoming-section rows carry a <span class="evdesc">16 March at 19:30</span>.
+            // Extract date and (if time is still blank) time from that span before falling back
+            // to the DOM-sibling header walk, which is a no-op on this site's structure.
+            val evdescRaw = row.select(".evdesc").text().trim()
+            val dtMatch = Regex("""\b(\d{1,2}\s+[A-Za-z]{3,9})\s+at\s+(\d{1,2}:\d{2})\b""", RegexOption.IGNORE_CASE).find(evdescRaw)
+            val date: String
+            if (dtMatch != null) {
+                date = normalizeDateHeader(dtMatch.groupValues[1])
+                if (time.isBlank()) time = dtMatch.groupValues[2]
+            } else {
+                date = findDateForRow(row) // fallback: walk sibling <tr> headers
+            }
 
             if (teams.isNotBlank() && teams.length > 3) {
-                matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
-            } else {
+                matches.add(Match(time, date, teams, competition, sport, league, detailPageUrl, country = country))
+            } else if (BuildConfig.DEBUG) {
                 Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
             }
         }
@@ -288,9 +343,10 @@ class Scraper(private val context: Context) {
      * Extracts sport and league information from available data.
      * Uses competition text, team names, and URL patterns to determine sport and league.
      */
-    private fun extractSportAndLeague(competition: String, teams: String, row: org.jsoup.nodes.Element?, detailPageUrl: String): Pair<String, String> {
+    private fun extractSportAndLeague(competition: String, teams: String, row: org.jsoup.nodes.Element?, detailPageUrl: String): Triple<String, String, String> {
         var sport = "Football" // Default to football since it's the most common
         var league = "" // Will be determined based on specific league detection
+        var country = "" // Will be resolved via TeamMatcher.lookupLeague
         
         val combinedText = "$competition $teams $detailPageUrl".lowercase()
         
@@ -377,8 +433,106 @@ class Scraper(private val context: Context) {
             // Only set league if we specifically identified one, otherwise leave it blank
             // This prevents duplication with competition field
         }
-        
-        return Pair(sport, league)
+
+        // ── Country resolution — team-DB-first approach ──────────────────────────────
+        //
+        // Priority order:
+        // 1. Known cross-border competition → force Europe / World (no team lookup needed)
+        // 2. Resolve from both/one team in the DB (ground-truth: each team knows its own league)
+        // 3. Fallback: lookupLeague on the short league name (text-based, only as last resort)
+        // 4. Fallback: lookupLeague on the raw competition field
+
+        val leagueLower = league.lowercase()
+        val competitionLower = competition.lowercase()
+
+        when {
+            WORLD_COMPETITIONS.any { leagueLower.contains(it) || competitionLower.contains(it) } -> {
+                country = "World"
+            }
+            CROSS_BORDER_LEAGUES.any { leagueLower.contains(it) || competitionLower.contains(it) } -> {
+                country = "Europe"
+            }
+            else -> {
+                // Try team-DB lookup first
+                val teamResolution = com.example.livetv.data.local.TeamMatcher.resolveLeagueFromTeams(teams)
+                if (teamResolution != null) {
+                    country = teamResolution.country
+                    // Fill in league from DB resolution whenever it is blank,
+                    // regardless of bothMatched — avoids blank league on partial matches.
+                    if (league.isBlank()) {
+                        val q = teamResolution.qualifiedKey
+                        league = if (q.contains(" - ")) q.substringAfter(" - ") else q
+                    }
+                } else {
+                    // Neither team is in the DB — do NOT assign a country.
+                    // Keyword-matched league name is kept for display, but showing a flag
+                    // would be misleading (we can't confirm which country's competition this is).
+                }
+            }
+        }
+
+        return Triple(sport, league, country)
+    }
+
+    /**
+     * Walks backwards through sibling `<tr>` elements to find the nearest date-header row
+     * (e.g. a single-cell row containing "16 March 2026" or "Today") and returns a compact
+     * display string like "16 Mar" or "Today". Returns an empty string when no header is found.
+     */
+    private fun findDateForRow(row: org.jsoup.nodes.Element): String {
+        var sibling = row.previousElementSibling()
+        while (sibling != null) {
+            if (sibling.tagName() == "tr") {
+                val text = sibling.text().trim()
+                if (text.isNotBlank() && isDateHeaderRow(sibling, text)) {
+                    return normalizeDateHeader(text)
+                }
+            }
+            sibling = sibling.previousElementSibling()
+        }
+        return ""
+    }
+
+    /** Returns true when [row] looks like a schedule date-header row (not a match row). */
+    private fun isDateHeaderRow(row: org.jsoup.nodes.Element, text: String): Boolean {
+        if (text.length > 80) return false // match rows are longer
+        if (row.select("a[href*='event']").isNotEmpty()) return false // it's a match row
+        val cls = row.attr("class").lowercase()
+        val looksLikeDateClass = cls.contains("date") || cls.contains("header") || cls.contains("category")
+        val hasDateText = DATE_HEADER_REGEX.containsMatchIn(text) || RELATIVE_DATE_REGEX.containsMatchIn(text)
+        if (!hasDateText) return false
+        // Either a date-specific CSS class, or a single/spanning cell (typical for header rows)
+        val cells = row.select("td")
+        val isSingleOrSpanned = cells.size == 1 || cells.any { it.attr("colspan").isNotEmpty() }
+        return looksLikeDateClass || isSingleOrSpanned
+    }
+
+    /** Converts a raw date-header string into a compact display form like "16 Mar" or "Today". */
+    private fun normalizeDateHeader(raw: String): String {
+        val text = raw.trim()
+        if (RELATIVE_DATE_REGEX.containsMatchIn(text)) {
+            return when {
+                text.contains("today", ignoreCase = true)     -> "Today"
+                text.contains("tomorrow", ignoreCase = true)  -> "Tomorrow"
+                text.contains("yesterday", ignoreCase = true) -> "Yesterday"
+                else -> text
+            }
+        }
+        // Extract "DD Month" (ignoring year and day-of-week prefix)
+        val dayMonth = Regex("""\b(\d{1,2})\s+([A-Za-z]{3,9})(?:\s+\d{4})?\b""").find(text)
+        if (dayMonth != null) {
+            val day = dayMonth.groupValues[1]
+            val month = dayMonth.groupValues[2].take(3).replaceFirstChar { it.uppercaseChar() }
+            return "$day $month"
+        }
+        // "Month DD" US format
+        val monthDay = Regex("""\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,\s*\d{4})?\b""").find(text)
+        if (monthDay != null) {
+            val month = monthDay.groupValues[1].take(3).replaceFirstChar { it.uppercaseChar() }
+            val day = monthDay.groupValues[2]
+            return "$day $month"
+        }
+        return text
     }
 
     /**
@@ -408,8 +562,8 @@ class Scraper(private val context: Context) {
             """\w+\s+\d{1,2}\s+at\s*""", // "September 14 at"
             """\d{1,2}\s+\w+\s+at\s*""", // "14 September at"
             """at\s+\d{1,2}:\d{2}""", // "at 15:30"
-            """live|today|tomorrow|now""",
-            """GMT|UTC|CET|EST|PST""",
+            """\blive\b|\btoday\b|\btomorrow\b|\bnow\b""",
+            """\bGMT\b|\bUTC\b|\bCET\b|\bEST\b|\bPST\b""",
             """\s+0:\d+\s*$""" // Remove scores like "0:0" at the end
         )
         
@@ -436,12 +590,12 @@ class Scraper(private val context: Context) {
      * Scrapes a single match detail page to find all available stream links.
      * Detects multiple stream types: Acestream, M3U8, RTMP, YouTube, Twitch, and other HTTP streams.
      */
-    suspend fun fetchStreamLinks(detailPageUrl: String): List<String> = withContext(Dispatchers.IO) {
+    suspend fun fetchStreamLinks(detailPageUrl: String): StreamFetchResult = withContext(Dispatchers.IO) {
         Log.d("Scraper", "Fetching stream links from: $detailPageUrl")
         
         try {
             val html = fetchHtmlWithOkHttp(detailPageUrl)
-            val doc = Jsoup.parse(html)
+            val doc = Jsoup.parse(html, detailPageUrl)
             val links = mutableSetOf<String>()
 
             // 1. Acestream links (P2P streaming)
@@ -465,19 +619,20 @@ class Scraper(private val context: Context) {
             val twitchLinks = doc.select("a[href*='twitch.tv/']").map { it.attr("href") }
             links.addAll(twitchLinks)
 
-            // 6. Webplayer links (protocol-relative URLs starting with //)
+            // 6. Webplayer links — resolve any relative URL to absolute so they pass validation.
+            val pageOrigin = baseOriginOf(detailPageUrl)
             val webplayerLinks = doc.select("a[href*='webplayer']")
                 .map { it.attr("href") }
                 .map { url ->
-                    // Convert protocol-relative URLs to HTTPS
-                    if (url.startsWith("//")) {
-                        "https:$url"
-                    } else {
-                        url
+                    when {
+                        url.startsWith("http://") || url.startsWith("https://") -> url
+                        url.startsWith("//") -> "https:$url"
+                        url.startsWith("/")  -> "$pageOrigin$url"   // root-relative → absolute
+                        else                 -> "$pageOrigin/$url"  // path-relative → absolute
                     }
                 }
             links.addAll(webplayerLinks)
-            Log.d("Scraper", "Found ${webplayerLinks.size} webplayer links: ${webplayerLinks.joinToString()}")
+            if (BuildConfig.DEBUG) Log.d("Scraper", "Found ${webplayerLinks.size} webplayer links: ${webplayerLinks.joinToString()}")
 
             // 7. Links in JavaScript or embedded content
             val scriptTags = doc.select("script")
@@ -503,43 +658,20 @@ class Scraper(private val context: Context) {
             // 9. Fallback regex search in the HTML text for various stream protocols
             if (links.isEmpty()) {
                 val bodyText = doc.body().text()
-                
-                // Acestream regex
-                val acestreamRegex = "acestream://[a-zA-Z0-9]+".toRegex()
-                val foundAcestream = acestreamRegex.findAll(bodyText).map { it.value }
-                links.addAll(foundAcestream)
-                
-                // M3U8 regex
-                val m3u8Regex = """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE)
-                val foundM3u8 = m3u8Regex.findAll(bodyText).map { it.value }
-                links.addAll(foundM3u8)
-                
-                // RTMP regex
-                val rtmpRegex = """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE)
-                val foundRtmp = rtmpRegex.findAll(bodyText).map { it.value }
-                links.addAll(foundRtmp)
+                links.addAll(ACESTREAM_REGEX.findAll(bodyText).map { it.value })
+                links.addAll(M3U8_REGEX.findAll(bodyText).map { it.value })
+                links.addAll(RTMP_REGEX.findAll(bodyText).map { it.value })
             }
 
-            // 10. Also search in the raw HTML for hidden links
-            val htmlRegexPatterns = listOf(
-                "acestream://[a-zA-Z0-9]+".toRegex(),
-                """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE),
-                """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE),
-                """(?:https?:)?//[^\s"'<>]+webplayer[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
-            )
-            
-            htmlRegexPatterns.forEach { regex ->
-                val htmlFound = regex.findAll(html)
-                    .map { it.value }
-                    .map { url ->
-                        // Convert protocol-relative URLs to HTTPS
-                        if (url.startsWith("//")) {
-                            "https:$url"
-                        } else {
-                            url
-                        }
-                    }
-                links.addAll(htmlFound)
+            // 10. Also search in the raw HTML for hidden acestream/M3U8/RTMP links.
+            // Note: WEBPLAYER_REGEX is intentionally excluded here — step 6 collects those
+            // from <a> tags properly. The raw-HTML regex match produces truncated fragment
+            // URLs from JS string-concatenation boundaries (e.g. "...php?t=") that pass
+            // domain validation but lead to blank pages.
+            listOf(ACESTREAM_REGEX, M3U8_REGEX, RTMP_REGEX).forEach { regex ->
+                links.addAll(regex.findAll(html).map { m ->
+                    if (m.value.startsWith("//")) "https:${m.value}" else m.value
+                })
             }
 
             val allLinks = links.toList().distinct()
@@ -595,12 +727,69 @@ class Scraper(private val context: Context) {
                     }
                 }}")
             }
-            
-            finalLinks
+
+            // Scrape team logo URLs from the match detail page.
+            // livetv.sx places team crests in the match header, typically inside
+            // td.team1/td.team2 or elements with class names containing "team".
+            // We try several selectors in priority order and take the first two
+            // non-blank img src values as home/away logos.
+            val (homeLogoUrl, awayLogoUrl) = scrapeTeamLogos(doc, pageOrigin)
+            if (BuildConfig.DEBUG) Log.d("Scraper", "Team logos — home: $homeLogoUrl  away: $awayLogoUrl")
+
+            StreamFetchResult(finalLinks, homeLogoUrl, awayLogoUrl)
         } catch (e: Exception) {
             Log.e("Scraper", "Error fetching stream links for $detailPageUrl", e)
-            emptyList()
+            StreamFetchResult(emptyList())
         }
+    }
+
+    /**
+     * Extracts the home and away team logo URLs from an already-parsed match detail page.
+     *
+     * livetv.sx renders team crests as:
+     *   <a href="/enx/team/…"><img itemprop="image" src="//cdn.livetv873.me/img/teams/…gif"></a>
+     *
+     * The primary selector targets exactly these elements (first = home, second = away).
+     * A secondary fallback matches any <img> whose src contains the known CDN teams path.
+     * Both selectors ignore the sport icon images scattered throughout the page header/sidebar.
+     *
+     * @param doc    Jsoup Document parsed with the base URI already set.
+     * @param origin Scheme+host (e.g. "https://livetv.sx") for resolving root-relative paths.
+     * @return Pair of (homeLogoUrl, awayLogoUrl); either may be null if not found.
+     */
+    private fun scrapeTeamLogos(doc: org.jsoup.nodes.Document, origin: String): Pair<String?, String?> {
+        fun resolveImgSrc(el: org.jsoup.nodes.Element?): String? {
+            el ?: return null
+            val src = el.attr("abs:src").ifBlank { el.attr("src") }
+            if (src.isBlank()) return null
+            return when {
+                src.startsWith("http://") || src.startsWith("https://") -> src
+                src.startsWith("//") -> "https:$src"
+                src.startsWith("/")  -> "$origin$src"
+                else                 -> "$origin/$src"
+            }
+        }
+
+        // Primary: team crest imgs with itemprop="image" inside a team profile link.
+        // These are precisely the two team logos on the match header — no false positives.
+        val teamImgs = doc.select("a[href*='/team/'] img[itemprop='image']")
+        if (teamImgs.size >= 2) {
+            return resolveImgSrc(teamImgs[0]) to resolveImgSrc(teamImgs[1])
+        }
+        if (teamImgs.size == 1) {
+            return resolveImgSrc(teamImgs[0]) to null
+        }
+
+        // Fallback: any img whose src path contains the known teams CDN directory.
+        val cdnImgs = doc.select("img[src*='/img/teams/']")
+        if (cdnImgs.size >= 2) {
+            return resolveImgSrc(cdnImgs[0]) to resolveImgSrc(cdnImgs[1])
+        }
+        if (cdnImgs.size == 1) {
+            return resolveImgSrc(cdnImgs[0]) to null
+        }
+
+        return null to null
     }
 
     /**
@@ -714,7 +903,7 @@ class Scraper(private val context: Context) {
                 ?: throw java.io.IOException("Empty response body")
 
             val content = body.string()
-            Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
+            if (BuildConfig.DEBUG) Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
             // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
             // URL can skip the network round-trip entirely.
             htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())

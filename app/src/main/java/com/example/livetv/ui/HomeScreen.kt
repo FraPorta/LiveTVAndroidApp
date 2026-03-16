@@ -1,10 +1,10 @@
 package com.example.livetv.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
@@ -35,7 +35,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import android.app.Activity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.livetv.data.model.Match
@@ -70,6 +72,10 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     // whether Back should move focus to the header or let the system close the app
     var gridAreaHasFocus by remember { mutableStateOf(false) }
 
+    // Exit-confirmation dialog state
+    var showExitConfirmDialog by remember { mutableStateOf(false) }
+    val activity = LocalContext.current as? Activity
+
     // Grid scroll state — used to scroll the expanded card into view
     val gridState = rememberLazyGridState()
     LaunchedEffect(expandedMatchUrl) {
@@ -95,6 +101,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
         try { focusRequester.requestFocus() } catch (_: Exception) {}
     }
 
+    // Final fallback: show exit confirmation instead of immediately closing the app
+    BackHandler(enabled = expandedMatchUrl == null && (isCompactScreen || !gridAreaHasFocus)) {
+        showExitConfirmDialog = true
+    }
+
     // Pull-to-refresh state
     val pullRefreshState = rememberPullToRefreshState()
 
@@ -105,6 +116,25 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
         }
     }
     
+    // Exit confirmation dialog
+    if (showExitConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirmDialog = false },
+            title = { Text("Exit LiveTV?") },
+            text  = { Text("Are you sure you want to close the app?") },
+            confirmButton = {
+                TextButton(onClick = { activity?.finish() }) {
+                    Text("Exit")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     // Handle TV remote key presses
     Box(
         modifier = Modifier
@@ -218,6 +248,23 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                     if (viewModel.isSearchActive.value) {
                         SearchBar(viewModel = viewModel)
                     }
+
+                    // Team + league suggestion chips — shown above the grid while search is active
+                    val teamSuggestions   by viewModel.teamSuggestions
+                    val leagueSuggestions by viewModel.leagueSuggestions
+                    if (viewModel.isSearchActive.value &&
+                        (teamSuggestions.isNotEmpty() || leagueSuggestions.isNotEmpty())) {
+                        SearchSuggestions(
+                            suggestions             = teamSuggestions,
+                            leagueSuggestions       = leagueSuggestions,
+                            favouriteTeams          = viewModel.favouriteTeams.value,
+                            favouriteLeagues        = viewModel.favouriteLeagues.value,
+                            onSuggestionTap         = { entry -> viewModel.updateSearchQuery(entry.name) },
+                            onLeagueTap             = { league -> viewModel.updateSearchQuery(league) },
+                            onToggleTeamFavourite   = { name -> viewModel.toggleFavouriteTeam(name) },
+                            onToggleLeagueFavourite = { league -> viewModel.toggleFavouriteLeague(league) },
+                        )
+                    }
                     
                     // Content area - pull-to-refresh only on phone; TV uses the Refresh button
                     val contentArea: @Composable () -> Unit = {
@@ -236,7 +283,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                         modifier = Modifier.size(40.dp)
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Text(text = "Fetching match list...")
+                                    Text(text = "Fetching match list...", color = MaterialTheme.colorScheme.onBackground)
                                 }
                             }
                             errorMessage != null -> {
@@ -291,6 +338,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     // so Compose can correctly identity and diff items on recomposition
                                     // (index-based keys cause incorrect animations and unnecessary
                                     // recomposition when the list order changes).
+                                    val favouriteMatchUrls by viewModel.favouriteMatchUrls
                                     itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { _, match ->
                                         MatchItem(
                                             match = match,
@@ -301,7 +349,8 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                             collapsedFocusRequester = if (expandedMatchUrl == match.detailPageUrl)
                                                 collapsedCardFocusRequester
                                             else
-                                                null
+                                                null,
+                                            isFavourite = match.detailPageUrl in favouriteMatchUrls
                                         )
                                     }
 
@@ -373,15 +422,23 @@ fun ActionButtons(
     modifier: Modifier = Modifier
 ) {
     val isSpinning = isBackgroundScraping || isRefreshing
-    val infiniteTransition = rememberInfiniteTransition(label = "actionSpin")
-    val spinRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = LinearEasing)
-        ),
-        label = "spinRotation"
-    )
+    // Animatable only drives frame callbacks while isSpinning == true, saving
+    // wasted 60 fps main-thread work when the app is idle.
+    val spinAnim = remember { Animatable(0f) }
+    LaunchedEffect(isSpinning) {
+        if (isSpinning) {
+            while (true) {
+                spinAnim.animateTo(
+                    targetValue = spinAnim.value + 360f,
+                    animationSpec = tween(durationMillis = 800, easing = LinearEasing)
+                )
+                spinAnim.snapTo(0f)
+            }
+        } else {
+            spinAnim.stop()
+        }
+    }
+    val spinRotation = spinAnim.value
 
     Surface(
         modifier       = modifier,

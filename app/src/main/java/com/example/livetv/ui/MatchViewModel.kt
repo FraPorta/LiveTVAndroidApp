@@ -5,10 +5,21 @@ import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.livetv.data.local.FavouritesPreferences
+import com.example.livetv.data.local.TeamDatabase
+import com.example.livetv.data.local.TeamMatcher
 import com.example.livetv.data.model.Match
+import com.example.livetv.data.model.TeamEntry
 import com.example.livetv.data.repository.MatchRepository
 import com.example.livetv.data.model.ScrapingSection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 const val INITIAL_LOAD_SIZE = 16
 const val LOAD_MORE_SIZE = 10
@@ -16,6 +27,7 @@ const val LOAD_MORE_SIZE = 10
 class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MatchRepository(application)
+    private val favouritesPrefs = FavouritesPreferences(application)
 
     // Section-based caching for matches and state
     private data class SectionData(
@@ -65,6 +77,24 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     val isSearchActive = mutableStateOf(false)
     val isBackgroundScraping = mutableStateOf(false)
 
+    // ── Favourites state ──────────────────────────────────────────────────────
+    val favouriteTeams   = mutableStateOf<Set<String>>(emptySet())
+    val favouriteLeagues = mutableStateOf<Set<String>>(emptySet())
+
+    // ── Team DB search suggestions ────────────────────────────────────────────
+    /** Populated while search is active and query is non-blank. */
+    val teamSuggestions   = mutableStateOf<List<TeamEntry>>(emptyList())
+    /** League suggestions populated while search is active and query is non-blank. */
+    val leagueSuggestions = mutableStateOf<List<String>>(emptyList())
+
+    /**
+     * Pre-computed set of [Match.detailPageUrl] values for all matches that are currently
+     * considered a favourite (team or league match). Recomputed off the main thread whenever
+     * [toggleFavouriteTeam] or [toggleFavouriteLeague] is called. UI and [getFilteredMatches]
+     * do a cheap O(1) lookup against this set instead of calling [isFavouriteMatch] per item.
+     */
+    val favouriteMatchUrls = mutableStateOf<Set<String>>(emptySet())
+
     private var currentVisibleCount: Int
         get() = currentSectionData().currentVisibleCount
         set(value) { sectionCache[selectedSection.value] = currentSectionData().copy(currentVisibleCount = value) }
@@ -78,7 +108,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         Log.d("ViewModel", "MatchViewModel initialized.")
-        loadInitialMatchList()
+        // Load persisted favourites synchronously (fast SharedPreferences reads)
+        favouriteTeams.value   = favouritesPrefs.getFavouriteTeams()
+        favouriteLeagues.value = favouritesPrefs.getFavouriteLeagues()
+        // Initialise the offline team DB off the main thread, then trigger the first
+        // network fetch only after the DB is ready.
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { TeamDatabase.init(application.assets) }
+            loadInitialMatchList()
+        }
     }
     
     /**
@@ -119,6 +157,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 
                 allMatches = initialMatches
                 totalFetchedMatches = initialMatches.size
+                recomputeFavouriteMatchUrls()
                 
                 Log.d("ViewModel", "Repository returned ${initialMatches.size} matches from ${selectedSection.value.displayName} section.")
                 
@@ -154,8 +193,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         
         // Try to restore cached data for the new section
         if (restoreSectionData(section)) {
-            // We have cached data, refresh the visible matches with existing data
-            refreshVisibleMatches()
+            // We have cached data; recompute favourite URLs against this section's
+            // allMatches so pinning always reflects the restored data set.
+            recomputeFavouriteMatchUrls()
         } else {
             // No cached data, load fresh data
             loadInitialMatchList()
@@ -207,6 +247,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 if (moreMatches.isNotEmpty()) {
                     allMatches = allMatches + moreMatches
                     totalFetchedMatches += moreMatches.size
+                    recomputeFavouriteMatchUrls()
                     Log.d("ViewModel", "Fetched ${moreMatches.size} more matches. Total now: $totalFetchedMatches")
 
                     // Update filter options with new matches
@@ -248,43 +289,45 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     private fun fetchLinksForBatch(batch: List<Match>) {
-        Log.d("ViewModel", "Fetching links for a batch of ${batch.size} matches.")
+        if (batch.isEmpty()) return
+        Log.d("ViewModel", "Fetching links for a batch of ${batch.size} matches (concurrent).")
         viewModelScope.launch {
-            batch.forEach { match ->
-                // Set loading state for this specific match
-                updateMatchInList(match.copy(areLinksLoading = true))
+            // 1. Mark entire batch as loading in a single state write
+            val batchByUrl = batch.associateBy { it.detailPageUrl }
+            applyMatchUpdates(batchByUrl.mapValues { (_, m) -> m.copy(areLinksLoading = true) })
 
-                try {
-                    Log.d("ViewModel", "Fetching links for: ${match.teams}")
-                    val links = repository.getStreamLinks(match.detailPageUrl)
-                    Log.d("ViewModel", "Found ${links.size} links for ${match.teams}")
-                    // Update match with loaded links
-                    updateMatchInList(match.copy(streamLinks = links, areLinksLoading = false))
-                } catch (e: Exception) {
-                    Log.e("ViewModel", "Error fetching links for ${match.teams}", e)
-                    // Handle error for a single match, maybe show a failed state
-                    updateMatchInList(match.copy(areLinksLoading = false))
-                }
+            // 2. Fire all HTTP requests concurrently
+            val results = coroutineScope {
+                batch.map { match ->
+                    async {
+                        match.detailPageUrl to runCatching {
+                            repository.getStreamLinks(match.detailPageUrl)
+                        }
+                    }
+                }.awaitAll()
             }
+
+            // 3. Apply all results in a single state write
+            val updates = results.associate { (url, result) ->
+                val original = batchByUrl[url]!!
+                url to result.fold(
+                    onSuccess = { r -> original.copy(streamLinks = r.links, areLinksLoading = false, homeLogoUrl = r.homeLogoUrl ?: original.homeLogoUrl, awayLogoUrl = r.awayLogoUrl ?: original.awayLogoUrl) },
+                    onFailure = { original.copy(areLinksLoading = false) }
+                )
+            }
+            applyMatchUpdates(updates)
+            Log.d("ViewModel", "Batch link fetch complete: ${results.size} matches updated.")
         }
     }
 
+    /** Applies a map of url→Match updates to both [visibleMatches] and [allMatches] in one pass each. */
+    private fun applyMatchUpdates(updates: Map<String, Match>) {
+        visibleMatches.value = visibleMatches.value.map { m -> updates[m.detailPageUrl] ?: m }
+        allMatches = allMatches.map { m -> updates[m.detailPageUrl] ?: m }
+    }
+
     private fun updateMatchInList(updatedMatch: Match) {
-        // Update in visible matches
-        val currentList = visibleMatches.value.toMutableList()
-        val index = currentList.indexOfFirst { it.detailPageUrl == updatedMatch.detailPageUrl }
-        if (index != -1) {
-            currentList[index] = updatedMatch
-            visibleMatches.value = currentList
-        }
-        
-        // Also update in allMatches to persist the link data
-        val allMatchesList = allMatches.toMutableList()
-        val allMatchesIndex = allMatchesList.indexOfFirst { it.detailPageUrl == updatedMatch.detailPageUrl }
-        if (allMatchesIndex != -1) {
-            allMatchesList[allMatchesIndex] = updatedMatch
-            allMatches = allMatchesList
-        }
+        applyMatchUpdates(mapOf(updatedMatch.detailPageUrl to updatedMatch))
     }
     
     private fun getFilteredMatches(): List<Match> {
@@ -295,21 +338,60 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             
             val leagueMatches = selectedLeague.value == null || 
                                selectedLeague.value == "All Leagues" || 
-                               match.league == selectedLeague.value
+                               match.league == selectedLeague.value ||
+                               match.qualifiedLeagueKey == selectedLeague.value
             
             sportMatches && leagueMatches
         }
+
+        // Pin favourite matches to the top of every section (O(1) set lookup, not linear scan)
+        val favUrls = favouriteMatchUrls.value
+        val (favs, rest) = filtered.partition { it.detailPageUrl in favUrls }
+        filtered = favs + rest
         
         // Apply search filter if active
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
-            val searchText = searchQuery.value.lowercase().trim()
-            filtered = filtered.filter { match ->
-                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.sport}".lowercase()
-                matchText.contains(searchText)
+            val searchText = searchQuery.value.trim()
+            // If the query resolves to a known team via the same fuzzy lookup used by
+            // favourites, use that instead of a plain contains() so aliases are handled.
+            val targetEntry = TeamMatcher.lookupTeam(searchText)
+            filtered = if (targetEntry != null) {
+                filtered.filter { match ->
+                    val parts = match.teams.split(" vs ", " v ", " – ", " — ", " - ", limit = 2)
+                    parts.any { part ->
+                        val resolved = TeamMatcher.lookupTeam(part.trim(), match.qualifiedLeagueKey)
+                        resolved != null && resolved.name == targetEntry.name
+                    }
+                }
+            } else {
+                // Free-text fallback: use pre-computed searchableText
+                val lowerText = searchText.lowercase()
+                filtered.filter { match -> match.searchableText.contains(lowerText) }
             }
         }
         
         return filtered
+    }
+
+    /**
+     * Recomputes [favouriteMatchUrls] synchronously on the main thread and immediately
+     * refreshes visible matches, so the gold accent and pinned ordering appear at once
+     * when a favourite is toggled. TeamMatcher uses hash-map lookups and the match list
+     * is at most a few hundred items, so this completes in microseconds.
+     */
+    private fun recomputeFavouriteMatchUrls() {
+        val currentMatches = allMatches
+        val favTeams   = favouriteTeams.value
+        val favLeagues = favouriteLeagues.value
+        val urls: Set<String> = if (favTeams.isEmpty() && favLeagues.isEmpty()) {
+            emptySet()
+        } else {
+            currentMatches
+                .filter { isFavouriteMatch(it) }
+                .mapTo(HashSet()) { it.detailPageUrl }
+        }
+        favouriteMatchUrls.value = urls
+        refreshVisibleMatches()
     }
 
     fun setSportFilter(sport: String?) {
@@ -345,10 +427,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
             updateMatchInList(match.copy(areLinksLoading = true, streamLinks = emptyList()))
 
             try {
-                val links = repository.getStreamLinks(match.detailPageUrl)
-                Log.d("ViewModel", "Refreshed ${links.size} links for ${match.teams}")
-                // Update match with refreshed links
-                updateMatchInList(match.copy(streamLinks = links, areLinksLoading = false))
+                val result = repository.getStreamLinks(match.detailPageUrl)
+                Log.d("ViewModel", "Refreshed ${result.links.size} links for ${match.teams}")
+                // Update match with refreshed links and any newly scraped logos
+                updateMatchInList(match.copy(
+                    streamLinks = result.links,
+                    areLinksLoading = false,
+                    homeLogoUrl = result.homeLogoUrl ?: match.homeLogoUrl,
+                    awayLogoUrl = result.awayLogoUrl ?: match.awayLogoUrl,
+                ))
             } catch (e: Exception) {
                 Log.e("ViewModel", "Error refreshing links for ${match.teams}", e)
                 // Restore the match without loading state but keep existing links
@@ -393,6 +480,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 allMatches = allAvailableMatches
                 hasLoadedAllMatches = true
                 totalFetchedMatches = allAvailableMatches.size
+                recomputeFavouriteMatchUrls()
                 updateFilterOptionsFromCurrentMatches()
                 Log.d("ViewModel", "Loaded all ${allAvailableMatches.size} matches for filtering")
             } catch (e: Exception) {
@@ -526,6 +614,11 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // Update filter options with the complete list
                 updateFilterOptionsFromCurrentMatches()
+
+                // Re-pin favourites now that allMatches contains the full set — without
+                // this, matches that appear beyond the initial page are never marked as
+                // favourites until the user switches tabs or toggles a favourite manually.
+                recomputeFavouriteMatchUrls()
                 
                 Log.d("ViewModel", "Background scraping updated match list: ${allMatches.size} total matches available for search")
                 
@@ -551,16 +644,34 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     fun deactivateSearch() {
         isSearchActive.value = false
         searchQuery.value = ""
+        teamSuggestions.value = emptyList()
+        leagueSuggestions.value = emptyList()
         refreshVisibleMatches()
         Log.d("ViewModel", "Search deactivated")
     }
     
+    private var searchDebounceJob: Job? = null
+
     /**
-     * Updates the search query and filters matches
+     * Updates the search query and filters matches.
+     * Suggestions and refreshVisibleMatches are debounced by 150 ms on a background thread
+     * to avoid doing heavy work on every keystroke.
      */
     fun updateSearchQuery(query: String) {
         searchQuery.value = query
-        refreshVisibleMatches()
+        searchDebounceJob?.cancel()
+        searchDebounceJob = viewModelScope.launch(Dispatchers.Default) {
+            delay(150L)
+            val suggestions = if (query.isNotBlank()) TeamMatcher.teamsMatchingQuery(query) else emptyList()
+            val leagues = if (query.isNotBlank())
+                TeamDatabase.getAllLeagues().filter { it.contains(query, ignoreCase = true) }.take(6)
+            else emptyList()
+            withContext(Dispatchers.Main) {
+                teamSuggestions.value = suggestions
+                leagueSuggestions.value = leagues
+                refreshVisibleMatches()
+            }
+        }
         Log.d("ViewModel", "Search query updated: '$query'")
     }
     
@@ -568,43 +679,93 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
      * Refreshes the visible matches based on current filters and search query
      */
     private fun refreshVisibleMatches() {
-        // FIX #10: getFilteredMatches() already applies sport, league, AND search filters,
-        // so the redundant second filter block below it has been removed.
         val filteredMatches = getFilteredMatches()
         val searchedMatches = filteredMatches
-        
+        // O(1) lookup index — replaces the O(n) allMatches.find{} scan in both branches below
+        val latestData = allMatches.associateBy { it.detailPageUrl }
+
         // Update visible matches - show all matching results when searching
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
             // When searching, show all matching results immediately
             currentVisibleCount = searchedMatches.size
-            // Ensure we use the most up-to-date match data with links
-            val matchesWithLatestData = searchedMatches.map { match ->
-                allMatches.find { it.detailPageUrl == match.detailPageUrl } ?: match
-            }
+            val matchesWithLatestData = searchedMatches.map { latestData[it.detailPageUrl] ?: it }
             visibleMatches.value = matchesWithLatestData
-            
-            // Fetch links only for matches that don't already have them loaded
-            if (matchesWithLatestData.isNotEmpty()) {
-                fetchLinksForBatchIfNeeded(matchesWithLatestData)
-            }
+            if (matchesWithLatestData.isNotEmpty()) fetchLinksForBatchIfNeeded(matchesWithLatestData)
         } else {
             // When not searching, use pagination logic
             val maxToShow = currentVisibleCount.coerceAtLeast(INITIAL_LOAD_SIZE)
             val toShow = searchedMatches.take(maxToShow)
             currentVisibleCount = toShow.size
-            // Ensure we use the most up-to-date match data with links
-            val toShowWithLatestData = toShow.map { match ->
-                allMatches.find { it.detailPageUrl == match.detailPageUrl } ?: match
-            }
+            val toShowWithLatestData = toShow.map { latestData[it.detailPageUrl] ?: it }
             visibleMatches.value = toShowWithLatestData
-            
-            // Fetch links only for matches that don't already have them loaded
-            if (toShowWithLatestData.isNotEmpty()) {
-                fetchLinksForBatchIfNeeded(toShowWithLatestData)
-            }
+            if (toShowWithLatestData.isNotEmpty()) fetchLinksForBatchIfNeeded(toShowWithLatestData)
         }
-        
+
         Log.d("ViewModel", "Visible matches refreshed: ${visibleMatches.value.size} (from ${searchedMatches.size} filtered)")
     }
-    
+
+    // ── Favourites API ────────────────────────────────────────────────────────
+
+    /** Toggles a team in/out of favourites and refreshes state. */
+    fun toggleFavouriteTeam(teamName: String) {
+        if (favouritesPrefs.isTeamFavourite(teamName)) {
+            favouritesPrefs.removeTeam(teamName)
+        } else {
+            favouritesPrefs.addTeam(teamName)
+        }
+        favouriteTeams.value = favouritesPrefs.getFavouriteTeams()
+        recomputeFavouriteMatchUrls()
+        Log.d("ViewModel", "Toggled favourite team '$teamName'. Now: ${favouriteTeams.value}")
+    }
+
+    /** Toggles a league in/out of favourites and refreshes state. */
+    fun toggleFavouriteLeague(leagueName: String) {
+        if (favouritesPrefs.isLeagueFavourite(leagueName)) {
+            favouritesPrefs.removeLeague(leagueName)
+        } else {
+            favouritesPrefs.addLeague(leagueName)
+        }
+        favouriteLeagues.value = favouritesPrefs.getFavouriteLeagues()
+        recomputeFavouriteMatchUrls()
+        Log.d("ViewModel", "Toggled favourite league '$leagueName'. Now: ${favouriteLeagues.value}")
+    }
+
+    /**
+     * Returns true when [match] involves at least one favourite team or belongs to
+     * a favourite league.
+     *
+     * Team matching uses [TeamMatcher] to bridge scraped names to canonical DB names.
+     */
+    fun isFavouriteMatch(match: Match): Boolean {
+        val favTeams   = favouriteTeams.value
+        val favLeagues = favouriteLeagues.value
+        if (favTeams.isEmpty() && favLeagues.isEmpty()) return false
+
+        // Check league first (cheaper).
+        // Use the qualified key ("England - Premier League") so different countries'
+        // competitions with the same short name don't falsely match.
+        if (favLeagues.isNotEmpty()) {
+            if (match.qualifiedLeagueKey in favLeagues) return true
+            // Also accept the raw short-form key for backward-compat with old stored favourites
+            if (match.league.isNotBlank() && match.league in favLeagues) return true
+        }
+
+        // Check each team in the "Home vs Away" string.
+        // Pass qualifiedLeagueKey as a hint so e.g. "Arsenal Tula" (Russian league)
+        // does not resolve to Arsenal FC (English league).
+        if (favTeams.isNotEmpty()) {
+            val parts = match.teams.split(" vs ", " v ", " – ", " — ", " - ", limit = 2)
+            for (part in parts) {
+                val entry = com.example.livetv.data.local.TeamMatcher.lookupTeam(
+                    part.trim(), match.qualifiedLeagueKey
+                )
+                if (entry != null && entry.name in favTeams) return true
+                if (part.trim() in favTeams) return true
+            }
+        }
+        return false
+    }
+
+    fun isTeamFavourite(teamName: String): Boolean = teamName in favouriteTeams.value
+    fun isLeagueFavourite(leagueName: String): Boolean = leagueName in favouriteLeagues.value
 }

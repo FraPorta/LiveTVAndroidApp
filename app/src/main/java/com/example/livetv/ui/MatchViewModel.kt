@@ -149,6 +149,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 
                 allMatches = initialMatches
                 totalFetchedMatches = initialMatches.size
+                recomputeFavouriteMatchUrls()
                 
                 Log.d("ViewModel", "Repository returned ${initialMatches.size} matches from ${selectedSection.value.displayName} section.")
                 
@@ -237,6 +238,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 if (moreMatches.isNotEmpty()) {
                     allMatches = allMatches + moreMatches
                     totalFetchedMatches += moreMatches.size
+                    recomputeFavouriteMatchUrls()
                     Log.d("ViewModel", "Fetched ${moreMatches.size} more matches. Total now: $totalFetchedMatches")
 
                     // Update filter options with new matches
@@ -349,26 +351,24 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Recomputes [favouriteMatchUrls] on [Dispatchers.Default] then updates visible matches.
-     * Call this instead of [refreshVisibleMatches] when the favourites sets change.
+     * Recomputes [favouriteMatchUrls] synchronously on the main thread and immediately
+     * refreshes visible matches, so the gold accent and pinned ordering appear at once
+     * when a favourite is toggled. TeamMatcher uses hash-map lookups and the match list
+     * is at most a few hundred items, so this completes in microseconds.
      */
     private fun recomputeFavouriteMatchUrls() {
         val currentMatches = allMatches
         val favTeams   = favouriteTeams.value
         val favLeagues = favouriteLeagues.value
-        viewModelScope.launch(Dispatchers.Default) {
-            val urls: Set<String> = if (favTeams.isEmpty() && favLeagues.isEmpty()) {
-                emptySet()
-            } else {
-                currentMatches
-                    .filter { isFavouriteMatch(it) }
-                    .mapTo(HashSet()) { it.detailPageUrl }
-            }
-            withContext(Dispatchers.Main) {
-                favouriteMatchUrls.value = urls
-                refreshVisibleMatches()
-            }
+        val urls: Set<String> = if (favTeams.isEmpty() && favLeagues.isEmpty()) {
+            emptySet()
+        } else {
+            currentMatches
+                .filter { isFavouriteMatch(it) }
+                .mapTo(HashSet()) { it.detailPageUrl }
         }
+        favouriteMatchUrls.value = urls
+        refreshVisibleMatches()
     }
 
     fun setSportFilter(sport: String?) {
@@ -452,6 +452,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
                 allMatches = allAvailableMatches
                 hasLoadedAllMatches = true
                 totalFetchedMatches = allAvailableMatches.size
+                recomputeFavouriteMatchUrls()
                 updateFilterOptionsFromCurrentMatches()
                 Log.d("ViewModel", "Loaded all ${allAvailableMatches.size} matches for filtering")
             } catch (e: Exception) {

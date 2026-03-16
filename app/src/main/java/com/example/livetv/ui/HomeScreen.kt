@@ -253,7 +253,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                         modifier = Modifier.size(40.dp)
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Text(text = "Fetching match list...")
+                                    Text(text = "Fetching match list...", color = MaterialTheme.colorScheme.onBackground)
                                 }
                             }
                             errorMessage != null -> {

@@ -609,15 +609,16 @@ class Scraper(private val context: Context) {
             val twitchLinks = doc.select("a[href*='twitch.tv/']").map { it.attr("href") }
             links.addAll(twitchLinks)
 
-            // 6. Webplayer links (protocol-relative URLs starting with //)
+            // 6. Webplayer links — resolve any relative URL to absolute so they pass validation.
+            val pageOrigin = baseOriginOf(detailPageUrl)
             val webplayerLinks = doc.select("a[href*='webplayer']")
                 .map { it.attr("href") }
                 .map { url ->
-                    // Convert protocol-relative URLs to HTTPS
-                    if (url.startsWith("//")) {
-                        "https:$url"
-                    } else {
-                        url
+                    when {
+                        url.startsWith("http://") || url.startsWith("https://") -> url
+                        url.startsWith("//") -> "https:$url"
+                        url.startsWith("/")  -> "$pageOrigin$url"   // root-relative → absolute
+                        else                 -> "$pageOrigin/$url"  // path-relative → absolute
                     }
                 }
             links.addAll(webplayerLinks)
@@ -652,8 +653,12 @@ class Scraper(private val context: Context) {
                 links.addAll(RTMP_REGEX.findAll(bodyText).map { it.value })
             }
 
-            // 10. Also search in the raw HTML for hidden links (uses pre-compiled companion regexes)
-            listOf(ACESTREAM_REGEX, M3U8_REGEX, RTMP_REGEX, WEBPLAYER_REGEX).forEach { regex ->
+            // 10. Also search in the raw HTML for hidden acestream/M3U8/RTMP links.
+            // Note: WEBPLAYER_REGEX is intentionally excluded here — step 6 collects those
+            // from <a> tags properly. The raw-HTML regex match produces truncated fragment
+            // URLs from JS string-concatenation boundaries (e.g. "...php?t=") that pass
+            // domain validation but lead to blank pages.
+            listOf(ACESTREAM_REGEX, M3U8_REGEX, RTMP_REGEX).forEach { regex ->
                 links.addAll(regex.findAll(html).map { m ->
                     if (m.value.startsWith("//")) "https:${m.value}" else m.value
                 })

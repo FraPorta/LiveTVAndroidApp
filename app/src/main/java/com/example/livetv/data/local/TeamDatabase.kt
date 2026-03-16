@@ -33,6 +33,15 @@ object TeamDatabase {
      */
     @Volatile private var _qualifiedKeysByShortLeague: Map<String, List<String>> = emptyMap()
 
+    /**
+     * Each entry paired with its pre-normalized name and alias strings.
+     * Built once at [init] time so Tier-2/Tier-3 lookups in [TeamMatcher] never
+     * call [normalize] repeatedly on the same strings.
+     */
+    data class NormalizedEntry(val entry: TeamEntry, val normalizedName: String, val normalizedAliases: List<String>)
+    @Volatile private var _normalizedEntries: List<NormalizedEntry> = emptyList()
+    fun getNormalizedEntries(): List<NormalizedEntry> = _normalizedEntries
+
     // ── Initialization ────────────────────────────────────────────────────────
 
     fun init(assetManager: AssetManager) {
@@ -61,6 +70,9 @@ object TeamDatabase {
                 _byNormalizedName   = nameIndex
                 _byLeague           = teams.groupBy { it.league }
                 _qualifiedKeysByShortLeague = leagueByShort
+                _normalizedEntries  = teams.map { entry ->
+                    NormalizedEntry(entry, normalize(entry.name), entry.aliases.map { normalize(it) })
+                }
 
                 Log.i("TeamDatabase", "Loaded ${teams.size} team entries from team_db.json")
             } catch (e: Exception) {
@@ -69,6 +81,7 @@ object TeamDatabase {
                 _byNormalizedName           = emptyMap()
                 _byLeague                   = emptyMap()
                 _qualifiedKeysByShortLeague = emptyMap()
+                _normalizedEntries          = emptyList()
             }
         }
     }

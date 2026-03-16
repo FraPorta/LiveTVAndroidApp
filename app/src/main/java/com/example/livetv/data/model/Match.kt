@@ -14,4 +14,7 @@ data class Match(
     /** Qualified league key aligned with TeamEntry.league, e.g. "England - Premier League". */
     val qualifiedLeagueKey: String get() =
         if (country.isNotBlank() && league.isNotBlank()) "$country - $league" else league
+
+    /** Pre-computed lowercase text for fast in-memory search — avoids per-call string allocation in getFilteredMatches. */
+    val searchableText: String = "$teams $competition $league $qualifiedLeagueKey $country $sport".lowercase()
 }

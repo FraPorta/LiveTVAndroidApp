@@ -13,6 +13,11 @@ import com.example.livetv.data.model.TeamEntry
 import com.example.livetv.data.repository.MatchRepository
 import com.example.livetv.data.model.ScrapingSection
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -103,12 +108,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         Log.d("ViewModel", "MatchViewModel initialized.")
-        // Initialise the offline team DB from bundled assets
-        TeamDatabase.init(application.assets)
-        // Load persisted favourites
+        // Load persisted favourites synchronously (fast SharedPreferences reads)
         favouriteTeams.value   = favouritesPrefs.getFavouriteTeams()
         favouriteLeagues.value = favouritesPrefs.getFavouriteLeagues()
-        loadInitialMatchList()
+        // Initialise the offline team DB off the main thread, then trigger the first
+        // network fetch only after the DB is ready.
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { TeamDatabase.init(application.assets) }
+            loadInitialMatchList()
+        }
     }
     
     /**
@@ -280,43 +288,45 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     private fun fetchLinksForBatch(batch: List<Match>) {
-        Log.d("ViewModel", "Fetching links for a batch of ${batch.size} matches.")
+        if (batch.isEmpty()) return
+        Log.d("ViewModel", "Fetching links for a batch of ${batch.size} matches (concurrent).")
         viewModelScope.launch {
-            batch.forEach { match ->
-                // Set loading state for this specific match
-                updateMatchInList(match.copy(areLinksLoading = true))
+            // 1. Mark entire batch as loading in a single state write
+            val batchByUrl = batch.associateBy { it.detailPageUrl }
+            applyMatchUpdates(batchByUrl.mapValues { (_, m) -> m.copy(areLinksLoading = true) })
 
-                try {
-                    Log.d("ViewModel", "Fetching links for: ${match.teams}")
-                    val links = repository.getStreamLinks(match.detailPageUrl)
-                    Log.d("ViewModel", "Found ${links.size} links for ${match.teams}")
-                    // Update match with loaded links
-                    updateMatchInList(match.copy(streamLinks = links, areLinksLoading = false))
-                } catch (e: Exception) {
-                    Log.e("ViewModel", "Error fetching links for ${match.teams}", e)
-                    // Handle error for a single match, maybe show a failed state
-                    updateMatchInList(match.copy(areLinksLoading = false))
-                }
+            // 2. Fire all HTTP requests concurrently
+            val results = coroutineScope {
+                batch.map { match ->
+                    async {
+                        match.detailPageUrl to runCatching {
+                            repository.getStreamLinks(match.detailPageUrl)
+                        }
+                    }
+                }.awaitAll()
             }
+
+            // 3. Apply all results in a single state write
+            val updates = results.associate { (url, result) ->
+                val original = batchByUrl[url]!!
+                url to result.fold(
+                    onSuccess = { links -> original.copy(streamLinks = links, areLinksLoading = false) },
+                    onFailure = { original.copy(areLinksLoading = false) }
+                )
+            }
+            applyMatchUpdates(updates)
+            Log.d("ViewModel", "Batch link fetch complete: ${results.size} matches updated.")
         }
     }
 
+    /** Applies a map of url→Match updates to both [visibleMatches] and [allMatches] in one pass each. */
+    private fun applyMatchUpdates(updates: Map<String, Match>) {
+        visibleMatches.value = visibleMatches.value.map { m -> updates[m.detailPageUrl] ?: m }
+        allMatches = allMatches.map { m -> updates[m.detailPageUrl] ?: m }
+    }
+
     private fun updateMatchInList(updatedMatch: Match) {
-        // Update in visible matches
-        val currentList = visibleMatches.value.toMutableList()
-        val index = currentList.indexOfFirst { it.detailPageUrl == updatedMatch.detailPageUrl }
-        if (index != -1) {
-            currentList[index] = updatedMatch
-            visibleMatches.value = currentList
-        }
-        
-        // Also update in allMatches to persist the link data
-        val allMatchesList = allMatches.toMutableList()
-        val allMatchesIndex = allMatchesList.indexOfFirst { it.detailPageUrl == updatedMatch.detailPageUrl }
-        if (allMatchesIndex != -1) {
-            allMatchesList[allMatchesIndex] = updatedMatch
-            allMatches = allMatchesList
-        }
+        applyMatchUpdates(mapOf(updatedMatch.detailPageUrl to updatedMatch))
     }
     
     private fun getFilteredMatches(): List<Match> {
@@ -341,10 +351,8 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         // Apply search filter if active
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
             val searchText = searchQuery.value.lowercase().trim()
-            filtered = filtered.filter { match ->
-                val matchText = "${match.teams} ${match.competition} ${match.league} ${match.qualifiedLeagueKey} ${match.country} ${match.sport}".lowercase()
-                matchText.contains(searchText)
-            }
+            // Use pre-computed searchableText to avoid per-call string allocation
+            filtered = filtered.filter { match -> match.searchableText.contains(searchText) }
         }
         
         return filtered
@@ -617,18 +625,28 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         Log.d("ViewModel", "Search deactivated")
     }
     
+    private var searchDebounceJob: Job? = null
+
     /**
-     * Updates the search query and filters matches
+     * Updates the search query and filters matches.
+     * Suggestions and refreshVisibleMatches are debounced by 150 ms on a background thread
+     * to avoid doing heavy work on every keystroke.
      */
     fun updateSearchQuery(query: String) {
         searchQuery.value = query
-        // Update team DB suggestions in real-time
-        teamSuggestions.value = if (query.isNotBlank()) TeamMatcher.teamsMatchingQuery(query)
-                                else emptyList()
-        leagueSuggestions.value = if (query.isNotBlank())
-            TeamDatabase.getAllLeagues().filter { it.contains(query, ignoreCase = true) }.take(6)
-        else emptyList()
-        refreshVisibleMatches()
+        searchDebounceJob?.cancel()
+        searchDebounceJob = viewModelScope.launch(Dispatchers.Default) {
+            delay(150L)
+            val suggestions = if (query.isNotBlank()) TeamMatcher.teamsMatchingQuery(query) else emptyList()
+            val leagues = if (query.isNotBlank())
+                TeamDatabase.getAllLeagues().filter { it.contains(query, ignoreCase = true) }.take(6)
+            else emptyList()
+            withContext(Dispatchers.Main) {
+                teamSuggestions.value = suggestions
+                leagueSuggestions.value = leagues
+                refreshVisibleMatches()
+            }
+        }
         Log.d("ViewModel", "Search query updated: '$query'")
     }
     
@@ -636,42 +654,28 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
      * Refreshes the visible matches based on current filters and search query
      */
     private fun refreshVisibleMatches() {
-        // FIX #10: getFilteredMatches() already applies sport, league, AND search filters,
-        // so the redundant second filter block below it has been removed.
         val filteredMatches = getFilteredMatches()
         val searchedMatches = filteredMatches
-        
+        // O(1) lookup index — replaces the O(n) allMatches.find{} scan in both branches below
+        val latestData = allMatches.associateBy { it.detailPageUrl }
+
         // Update visible matches - show all matching results when searching
         if (isSearchActive.value && searchQuery.value.isNotBlank()) {
             // When searching, show all matching results immediately
             currentVisibleCount = searchedMatches.size
-            // Ensure we use the most up-to-date match data with links
-            val matchesWithLatestData = searchedMatches.map { match ->
-                allMatches.find { it.detailPageUrl == match.detailPageUrl } ?: match
-            }
+            val matchesWithLatestData = searchedMatches.map { latestData[it.detailPageUrl] ?: it }
             visibleMatches.value = matchesWithLatestData
-            
-            // Fetch links only for matches that don't already have them loaded
-            if (matchesWithLatestData.isNotEmpty()) {
-                fetchLinksForBatchIfNeeded(matchesWithLatestData)
-            }
+            if (matchesWithLatestData.isNotEmpty()) fetchLinksForBatchIfNeeded(matchesWithLatestData)
         } else {
             // When not searching, use pagination logic
             val maxToShow = currentVisibleCount.coerceAtLeast(INITIAL_LOAD_SIZE)
             val toShow = searchedMatches.take(maxToShow)
             currentVisibleCount = toShow.size
-            // Ensure we use the most up-to-date match data with links
-            val toShowWithLatestData = toShow.map { match ->
-                allMatches.find { it.detailPageUrl == match.detailPageUrl } ?: match
-            }
+            val toShowWithLatestData = toShow.map { latestData[it.detailPageUrl] ?: it }
             visibleMatches.value = toShowWithLatestData
-            
-            // Fetch links only for matches that don't already have them loaded
-            if (toShowWithLatestData.isNotEmpty()) {
-                fetchLinksForBatchIfNeeded(toShowWithLatestData)
-            }
+            if (toShowWithLatestData.isNotEmpty()) fetchLinksForBatchIfNeeded(toShowWithLatestData)
         }
-        
+
         Log.d("ViewModel", "Visible matches refreshed: ${visibleMatches.value.size} (from ${searchedMatches.size} filtered)")
     }
 

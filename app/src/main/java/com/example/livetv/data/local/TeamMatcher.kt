@@ -43,7 +43,7 @@ object TeamMatcher {
         // 1. Exact index hit (handles canonical names and all aliases)
         TeamDatabase.lookupByNormalizedName(n)?.let { return it }
 
-        val all = TeamDatabase.getAllTeams()
+        val normalizedEntries = TeamDatabase.getNormalizedEntries()
 
         fun prefixMatch(a: String, b: String): Boolean {
             if (!a.startsWith(b) && !b.startsWith(a)) return false
@@ -51,33 +51,31 @@ object TeamMatcher {
             return ratio >= 0.75f
         }
 
-        fun entryMatchesPrefix(entry: TeamEntry): Boolean {
-            val en = TeamDatabase.normalize(entry.name)
-            return prefixMatch(en, n) ||
-                    entry.aliases.any { alias -> prefixMatch(TeamDatabase.normalize(alias), n) }
+        fun entryMatchesPrefix(ne: TeamDatabase.NormalizedEntry): Boolean {
+            return prefixMatch(ne.normalizedName, n) ||
+                    ne.normalizedAliases.any { an -> prefixMatch(an, n) }
         }
 
         // 2. Prefix match with 75% length ratio guard.
         //    When a leagueHint is given, first try same-league entries → then any.
         val prefixResult = if (leagueHint.isNotBlank()) {
-            all.firstOrNull { it.league == leagueHint && entryMatchesPrefix(it) }
-                ?: all.firstOrNull { entryMatchesPrefix(it) }
+            normalizedEntries.firstOrNull { it.entry.league == leagueHint && entryMatchesPrefix(it) }
+                ?: normalizedEntries.firstOrNull { entryMatchesPrefix(it) }
         } else {
-            all.firstOrNull { entryMatchesPrefix(it) }
+            normalizedEntries.firstOrNull { entryMatchesPrefix(it) }
         }
-        prefixResult?.let { return it }
+        prefixResult?.let { return it.entry }
 
         // 3. Substring fallback: pick the LONGEST matching candidate (more specific = better).
         //    Same-league entries get a large bonus so they win over longer foreign names.
         val LEAGUE_BONUS = 1000
-        return all
-            .mapNotNull { entry ->
-                val en = TeamDatabase.normalize(entry.name)
+        return normalizedEntries
+            .mapNotNull { ne ->
+                val en = ne.normalizedName
                 val rawLen = when {
                     en.length >= 4 && n.contains(en) -> en.length
                     en.length >= 4 && en.contains(n) -> n.length
-                    else -> entry.aliases.mapNotNull { alias ->
-                        val an = TeamDatabase.normalize(alias)
+                    else -> ne.normalizedAliases.mapNotNull { an ->
                         when {
                             an.length >= 4 && n.contains(an) -> an.length
                             an.length >= 4 && an.contains(n) -> n.length
@@ -85,8 +83,8 @@ object TeamMatcher {
                         }
                     }.maxOrNull()
                 } ?: return@mapNotNull null
-                val score = rawLen + if (leagueHint.isNotBlank() && entry.league == leagueHint) LEAGUE_BONUS else 0
-                entry to score
+                val score = rawLen + if (leagueHint.isNotBlank() && ne.entry.league == leagueHint) LEAGUE_BONUS else 0
+                ne.entry to score
             }
             .maxByOrNull { (_, score) -> score }
             ?.first
@@ -165,15 +163,14 @@ object TeamMatcher {
     fun teamsMatchingQuery(query: String, limit: Int = 12): List<TeamEntry> {
         if (query.isBlank()) return emptyList()
         val nq = TeamDatabase.normalize(query)
-        return TeamDatabase.getAllTeams()
-            .filter { entry ->
-                TeamDatabase.normalize(entry.name).contains(nq) ||
-                        entry.aliases.any { TeamDatabase.normalize(it).contains(nq) }
+        return TeamDatabase.getNormalizedEntries()
+            .filter { ne ->
+                ne.normalizedName.contains(nq) ||
+                        ne.normalizedAliases.any { it.contains(nq) }
             }
             // Prefer entries where the name *starts* with the query over contains
-            .sortedWith(compareByDescending { entry ->
-                TeamDatabase.normalize(entry.name).startsWith(nq)
-            })
+            .sortedWith(compareByDescending { ne -> ne.normalizedName.startsWith(nq) })
+            .map { it.entry }
             .take(limit)
     }
 }

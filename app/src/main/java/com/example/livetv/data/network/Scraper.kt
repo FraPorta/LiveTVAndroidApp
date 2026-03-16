@@ -57,9 +57,12 @@ class Scraper(private val context: Context) {
     private val HTML_CACHE_TTL_MS = 60_000L // 60 seconds
 
     companion object {
-        // FIX #17: Pre-compiled regex, reused across all JS-scanning calls in fetchStreamLinks
-        // instead of being rebuilt on every iteration of the scriptTags forEach loop.
+        // Pre-compiled regexes — avoids recompiling the same patterns on every fetchStreamLinks call.
         private val JS_URL_REGEX = """https?://[^\s"'<>]+(?:\.m3u8|stream|live|watch|player)""".toRegex(RegexOption.IGNORE_CASE)
+        private val ACESTREAM_REGEX = "acestream://[a-zA-Z0-9]+".toRegex()
+        private val M3U8_REGEX = """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE)
+        private val RTMP_REGEX = """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE)
+        private val WEBPLAYER_REGEX = """(?:https?:)?//[^\s"'<>]+webplayer[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
 
         // FIX #27: Single source of truth for football-related keywords.
         // Previously hard-coded twice (in scrapeMatchList and scrapeAllMatches), now referenced
@@ -229,7 +232,7 @@ class Scraper(private val context: Context) {
                     competition.split(Regex("""[–—-]|\bvs?\.?\b""")).size == 2
                 if (teamsLooksLikeLeague && competitionLooksLikeTeams) {
                     val tmp = teams; teams = competition; competition = tmp
-                    Log.d("Scraper", "Swapped teams/competition — Teams: '$teams', Competition: '$competition'")
+                    if (BuildConfig.DEBUG) Log.d("Scraper", "Swapped teams/competition — Teams: '$teams', Competition: '$competition'")
                 }
             }
 
@@ -255,12 +258,14 @@ class Scraper(private val context: Context) {
             teams = cleanTeamNames(teams, time, competition)
             val (sport, league, country) = extractSportAndLeague(competition, teams, row, detailPageUrl)
 
-            Log.d("Scraper", "Raw: Time='$time' Teams='$teams' Competition='$competition'")
-            Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league' Country='$country'")
+            if (BuildConfig.DEBUG) {
+                Log.d("Scraper", "Raw: Time='$time' Teams='$teams' Competition='$competition'")
+                Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league' Country='$country'")
+            }
 
             if (teams.isNotBlank() && teams.length > 3) {
                 matches.add(Match(time, teams, competition, sport, league, detailPageUrl, country = country))
-            } else {
+            } else if (BuildConfig.DEBUG) {
                 Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
             }
         }
@@ -526,7 +531,7 @@ class Scraper(private val context: Context) {
                     }
                 }
             links.addAll(webplayerLinks)
-            Log.d("Scraper", "Found ${webplayerLinks.size} webplayer links: ${webplayerLinks.joinToString()}")
+            if (BuildConfig.DEBUG) Log.d("Scraper", "Found ${webplayerLinks.size} webplayer links: ${webplayerLinks.joinToString()}")
 
             // 7. Links in JavaScript or embedded content
             val scriptTags = doc.select("script")
@@ -552,43 +557,16 @@ class Scraper(private val context: Context) {
             // 9. Fallback regex search in the HTML text for various stream protocols
             if (links.isEmpty()) {
                 val bodyText = doc.body().text()
-                
-                // Acestream regex
-                val acestreamRegex = "acestream://[a-zA-Z0-9]+".toRegex()
-                val foundAcestream = acestreamRegex.findAll(bodyText).map { it.value }
-                links.addAll(foundAcestream)
-                
-                // M3U8 regex
-                val m3u8Regex = """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE)
-                val foundM3u8 = m3u8Regex.findAll(bodyText).map { it.value }
-                links.addAll(foundM3u8)
-                
-                // RTMP regex
-                val rtmpRegex = """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE)
-                val foundRtmp = rtmpRegex.findAll(bodyText).map { it.value }
-                links.addAll(foundRtmp)
+                links.addAll(ACESTREAM_REGEX.findAll(bodyText).map { it.value })
+                links.addAll(M3U8_REGEX.findAll(bodyText).map { it.value })
+                links.addAll(RTMP_REGEX.findAll(bodyText).map { it.value })
             }
 
-            // 10. Also search in the raw HTML for hidden links
-            val htmlRegexPatterns = listOf(
-                "acestream://[a-zA-Z0-9]+".toRegex(),
-                """https?://[^\s"'<>]+\.m3u8""".toRegex(RegexOption.IGNORE_CASE),
-                """rtmps?://[^\s"'<>]+""".toRegex(RegexOption.IGNORE_CASE),
-                """(?:https?:)?//[^\s"'<>]+webplayer[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
-            )
-            
-            htmlRegexPatterns.forEach { regex ->
-                val htmlFound = regex.findAll(html)
-                    .map { it.value }
-                    .map { url ->
-                        // Convert protocol-relative URLs to HTTPS
-                        if (url.startsWith("//")) {
-                            "https:$url"
-                        } else {
-                            url
-                        }
-                    }
-                links.addAll(htmlFound)
+            // 10. Also search in the raw HTML for hidden links (uses pre-compiled companion regexes)
+            listOf(ACESTREAM_REGEX, M3U8_REGEX, RTMP_REGEX, WEBPLAYER_REGEX).forEach { regex ->
+                links.addAll(regex.findAll(html).map { m ->
+                    if (m.value.startsWith("//")) "https:${m.value}" else m.value
+                })
             }
 
             val allLinks = links.toList().distinct()
@@ -763,7 +741,7 @@ class Scraper(private val context: Context) {
                 ?: throw java.io.IOException("Empty response body")
 
             val content = body.string()
-            Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
+            if (BuildConfig.DEBUG) Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
             // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
             // URL can skip the network round-trip entirely.
             htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())

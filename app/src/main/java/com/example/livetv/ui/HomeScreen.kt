@@ -1,9 +1,7 @@
 package com.example.livetv.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.focusable
@@ -392,15 +390,23 @@ fun ActionButtons(
     modifier: Modifier = Modifier
 ) {
     val isSpinning = isBackgroundScraping || isRefreshing
-    val infiniteTransition = rememberInfiniteTransition(label = "actionSpin")
-    val spinRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = LinearEasing)
-        ),
-        label = "spinRotation"
-    )
+    // Animatable only drives frame callbacks while isSpinning == true, saving
+    // wasted 60 fps main-thread work when the app is idle.
+    val spinAnim = remember { Animatable(0f) }
+    LaunchedEffect(isSpinning) {
+        if (isSpinning) {
+            while (true) {
+                spinAnim.animateTo(
+                    targetValue = spinAnim.value + 360f,
+                    animationSpec = tween(durationMillis = 800, easing = LinearEasing)
+                )
+                spinAnim.snapTo(0f)
+            }
+        } else {
+            spinAnim.stop()
+        }
+    }
+    val spinRotation = spinAnim.value
 
     Surface(
         modifier       = modifier,

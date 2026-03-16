@@ -156,7 +156,7 @@ fun MatchItem(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                TeamLogo(teamParts.first, size = 18.dp)
+                                TeamLogo(teamParts.first, size = 18.dp, leagueHint = match.qualifiedLeagueKey)
                                 Text(
                                     text = teamParts.first,
                                     style = MaterialTheme.typography.titleSmall,
@@ -177,7 +177,7 @@ fun MatchItem(
                                     textAlign = TextAlign.End,
                                     modifier = Modifier.weight(1f)
                                 )
-                                TeamLogo(teamParts.second, size = 18.dp)
+                                TeamLogo(teamParts.second, size = 18.dp, leagueHint = match.qualifiedLeagueKey)
                             }
                         } else {
                             Text(
@@ -259,11 +259,11 @@ fun MatchItem(
                 ) {
                     // Teams section with logos and favourite stars
                     if (expandedParts.size == 2) {
-                        val canonical0 = remember(expandedParts[0]) {
-                            TeamMatcher.lookupTeam(expandedParts[0])?.name ?: expandedParts[0]
+                        val canonical0 = remember(expandedParts[0], match.qualifiedLeagueKey) {
+                            TeamMatcher.lookupTeam(expandedParts[0], match.qualifiedLeagueKey)?.name ?: expandedParts[0]
                         }
-                        val canonical1 = remember(expandedParts[1]) {
-                            TeamMatcher.lookupTeam(expandedParts[1])?.name ?: expandedParts[1]
+                        val canonical1 = remember(expandedParts[1], match.qualifiedLeagueKey) {
+                            TeamMatcher.lookupTeam(expandedParts[1], match.qualifiedLeagueKey)?.name ?: expandedParts[1]
                         }
                         val isFav0 = canonical0 in favTeams
                         val isFav1 = canonical1 in favTeams
@@ -272,7 +272,7 @@ fun MatchItem(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            TeamLogo(expandedParts[0], size = 20.dp)
+                            TeamLogo(expandedParts[0], size = 20.dp, leagueHint = match.qualifiedLeagueKey)
                             IconButton(
                                 onClick = { viewModel.toggleFavouriteTeam(canonical0) },
                                 modifier = Modifier.size(28.dp)
@@ -315,7 +315,7 @@ fun MatchItem(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
-                            TeamLogo(expandedParts[1], size = 20.dp)
+                            TeamLogo(expandedParts[1], size = 20.dp, leagueHint = match.qualifiedLeagueKey)
                         }
                     } else {
                         Text(
@@ -385,7 +385,7 @@ fun MatchItem(
                             )
                         }
                         if (match.league.isNotBlank()) {
-                            val isLeagueFav = match.league in favLeagues
+                            val isLeagueFav = match.qualifiedLeagueKey in favLeagues
                             if (timeDisplay.isNotBlank()) {
                                 Text(
                                     text = "•",
@@ -394,18 +394,19 @@ fun MatchItem(
                                 )
                             }
                             IconButton(
-                                onClick = { viewModel.toggleFavouriteLeague(match.league) },
+                                onClick = { viewModel.toggleFavouriteLeague(match.qualifiedLeagueKey) },
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     imageVector = if (isLeagueFav) Icons.Filled.Star else Icons.Outlined.Star,
-                                    contentDescription = if (isLeagueFav) "Unfavourite ${match.league}" else "Favourite ${match.league}",
+                                    contentDescription = if (isLeagueFav) "Unfavourite ${match.qualifiedLeagueKey}" else "Favourite ${match.qualifiedLeagueKey}",
                                     tint = if (isLeagueFav) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
+                            val flag = CountryFlags.forCountry(match.country)
                             Text(
-                                text = match.league,
+                                text = if (flag.isNotEmpty()) "$flag ${match.league}" else match.league,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,

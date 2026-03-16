@@ -710,18 +710,24 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
         val favLeagues = favouriteLeagues.value
         if (favTeams.isEmpty() && favLeagues.isEmpty()) return false
 
-        // Check league first (cheaper)
+        // Check league first (cheaper).
+        // Use the qualified key ("England - Premier League") so different countries'
+        // competitions with the same short name don't falsely match.
         if (favLeagues.isNotEmpty()) {
-            val entry = com.example.livetv.data.local.TeamMatcher.lookupTeam(match.league)
-            if (entry != null && entry.league in favLeagues) return true
-            if (match.league in favLeagues) return true
+            if (match.qualifiedLeagueKey in favLeagues) return true
+            // Also accept the raw short-form key for backward-compat with old stored favourites
+            if (match.league.isNotBlank() && match.league in favLeagues) return true
         }
 
-        // Check each team in the "Home vs Away" string
+        // Check each team in the "Home vs Away" string.
+        // Pass qualifiedLeagueKey as a hint so e.g. "Arsenal Tula" (Russian league)
+        // does not resolve to Arsenal FC (English league).
         if (favTeams.isNotEmpty()) {
-            val parts = match.teams.split(" vs ", " v ", " - ", limit = 2)
+            val parts = match.teams.split(" vs ", " v ", " – ", " — ", " - ", limit = 2)
             for (part in parts) {
-                val entry = com.example.livetv.data.local.TeamMatcher.lookupTeam(part.trim())
+                val entry = com.example.livetv.data.local.TeamMatcher.lookupTeam(
+                    part.trim(), match.qualifiedLeagueKey
+                )
                 if (entry != null && entry.name in favTeams) return true
                 if (part.trim() in favTeams) return true
             }

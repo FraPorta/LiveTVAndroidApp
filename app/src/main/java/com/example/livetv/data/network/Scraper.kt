@@ -68,6 +68,17 @@ class Scraper(private val context: Context) {
             "football", "soccer", "premier", "liga", "bundesliga", "serie a",
             "ligue", "champions league", "europa league", "uefa", "fifa", "world cup"
         )
+
+        /** Competitions that span multiple countries — country should be "Europe" or "World". */
+        private val CROSS_BORDER_LEAGUES: Set<String> = setOf(
+            "champions league", "europa league", "conference league",
+            "uefa super cup", "world cup", "european championship", "euros",
+            "nations league", "olympic", "copa america", "africa cup", "afcon",
+            "copa del rey", "fa cup", "dfb pokal", "coupe de france"
+        )
+        private val WORLD_COMPETITIONS: Set<String> = setOf(
+            "world cup", "copa america", "africa cup", "afcon", "olympic"
+        )
     }
 
     /**
@@ -242,13 +253,13 @@ class Scraper(private val context: Context) {
             }
 
             teams = cleanTeamNames(teams, time, competition)
-            val (sport, league) = extractSportAndLeague(competition, teams, row, detailPageUrl)
+            val (sport, league, country) = extractSportAndLeague(competition, teams, row, detailPageUrl)
 
             Log.d("Scraper", "Raw: Time='$time' Teams='$teams' Competition='$competition'")
-            Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league'")
+            Log.d("Scraper", "Final: Teams='$teams' Sport='$sport' League='$league' Country='$country'")
 
             if (teams.isNotBlank() && teams.length > 3) {
-                matches.add(Match(time, teams, competition, sport, league, detailPageUrl))
+                matches.add(Match(time, teams, competition, sport, league, detailPageUrl, country = country))
             } else {
                 Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
             }
@@ -288,9 +299,10 @@ class Scraper(private val context: Context) {
      * Extracts sport and league information from available data.
      * Uses competition text, team names, and URL patterns to determine sport and league.
      */
-    private fun extractSportAndLeague(competition: String, teams: String, row: org.jsoup.nodes.Element?, detailPageUrl: String): Pair<String, String> {
+    private fun extractSportAndLeague(competition: String, teams: String, row: org.jsoup.nodes.Element?, detailPageUrl: String): Triple<String, String, String> {
         var sport = "Football" // Default to football since it's the most common
         var league = "" // Will be determined based on specific league detection
+        var country = "" // Will be resolved via TeamMatcher.lookupLeague
         
         val combinedText = "$competition $teams $detailPageUrl".lowercase()
         
@@ -377,8 +389,44 @@ class Scraper(private val context: Context) {
             // Only set league if we specifically identified one, otherwise leave it blank
             // This prevents duplication with competition field
         }
-        
-        return Pair(sport, league)
+
+        // ── Country resolution — team-DB-first approach ──────────────────────────────
+        //
+        // Priority order:
+        // 1. Known cross-border competition → force Europe / World (no team lookup needed)
+        // 2. Resolve from both/one team in the DB (ground-truth: each team knows its own league)
+        // 3. Fallback: lookupLeague on the short league name (text-based, only as last resort)
+        // 4. Fallback: lookupLeague on the raw competition field
+
+        val leagueLower = league.lowercase()
+        val competitionLower = competition.lowercase()
+
+        when {
+            WORLD_COMPETITIONS.any { leagueLower.contains(it) || competitionLower.contains(it) } -> {
+                country = "World"
+            }
+            CROSS_BORDER_LEAGUES.any { leagueLower.contains(it) || competitionLower.contains(it) } -> {
+                country = "Europe"
+            }
+            else -> {
+                // Try team-DB lookup first
+                val teamResolution = com.example.livetv.data.local.TeamMatcher.resolveLeagueFromTeams(teams)
+                if (teamResolution != null) {
+                    country = teamResolution.country
+                    // If we have a high-confidence match and league is still blank, fill it in
+                    if (league.isBlank() && teamResolution.bothMatched) {
+                        val q = teamResolution.qualifiedKey
+                        league = if (q.contains(" - ")) q.substringAfter(" - ") else q
+                    }
+                } else {
+                    // Neither team is in the DB — do NOT assign a country.
+                    // Keyword-matched league name is kept for display, but showing a flag
+                    // would be misleading (we can't confirm which country's competition this is).
+                }
+            }
+        }
+
+        return Triple(sport, league, country)
     }
 
     /**

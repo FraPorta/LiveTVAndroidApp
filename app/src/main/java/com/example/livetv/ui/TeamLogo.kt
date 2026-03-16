@@ -31,8 +31,9 @@ fun TeamLogo(
     teamName: String,
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
+    leagueHint: String = "",
 ) {
-    val entry = remember(teamName) { TeamMatcher.lookupTeam(teamName) }
+    val entry = remember(teamName, leagueHint) { TeamMatcher.lookupTeam(teamName, leagueHint) }
     entry ?: return
 
     val context = LocalContext.current

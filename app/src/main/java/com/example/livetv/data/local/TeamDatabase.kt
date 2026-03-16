@@ -26,6 +26,13 @@ object TeamDatabase {
     /** All teams grouped by league directory name. */
     @Volatile private var _byLeague: Map<String, List<TeamEntry>> = emptyMap()
 
+    /**
+     * Maps normalized short league name (the part after " - ") to the list of all
+     * fully-qualified league keys that share that short name.
+     * e.g. "serie a" → ["Italy - Serie A", "Argentina - Serie A"]
+     */
+    @Volatile private var _qualifiedKeysByShortLeague: Map<String, List<String>> = emptyMap()
+
     // ── Initialization ────────────────────────────────────────────────────────
 
     fun init(assetManager: AssetManager) {
@@ -42,16 +49,26 @@ object TeamDatabase {
                     entry.aliases.forEach { alias -> nameIndex[normalize(alias)] = entry }
                 }
 
-                _allTeams       = teams
-                _byNormalizedName = nameIndex
-                _byLeague       = teams.groupBy { it.league }
+                val leagueByShort: MutableMap<String, MutableList<String>> = LinkedHashMap()
+                teams.groupBy { it.league }.keys.forEach { qualifiedKey ->
+                    // Qualified key format: "Country - League Name" or just "League Name"
+                    val shortPart = if (qualifiedKey.contains(" - "))
+                        qualifiedKey.substringAfter(" - ") else qualifiedKey
+                    leagueByShort.getOrPut(normalize(shortPart)) { mutableListOf() }.add(qualifiedKey)
+                }
+
+                _allTeams           = teams
+                _byNormalizedName   = nameIndex
+                _byLeague           = teams.groupBy { it.league }
+                _qualifiedKeysByShortLeague = leagueByShort
 
                 Log.i("TeamDatabase", "Loaded ${teams.size} team entries from team_db.json")
             } catch (e: Exception) {
                 Log.e("TeamDatabase", "Failed to load team_db.json: ${e.message}")
-                _allTeams       = emptyList()
-                _byNormalizedName = emptyMap()
-                _byLeague       = emptyMap()
+                _allTeams                   = emptyList()
+                _byNormalizedName           = emptyMap()
+                _byLeague                   = emptyMap()
+                _qualifiedKeysByShortLeague = emptyMap()
             }
         }
     }
@@ -65,6 +82,38 @@ object TeamDatabase {
     fun getByLeague(league: String): List<TeamEntry> = _byLeague[league] ?: emptyList()
 
     fun getAllLeagues(): List<String> = _byLeague.keys.sorted()
+
+    /**
+     * Given a raw scraped league label (e.g. "Premier League", "Serie A"),
+     * returns the best-matching fully-qualified key (e.g. "England - Premier League").
+     *
+     * When [contextTeams] is non-blank the qualified key is cross-checked against
+     * the league of any team we can resolve from contextTeams — this disambiguates
+     * e.g. "Serie A" → Italy vs Argentina when we already know which teams are playing.
+     */
+    fun lookupLeagueQualified(rawLeague: String, contextTeams: String = ""): String? {
+        if (rawLeague.isBlank()) return null
+        val n = normalize(rawLeague)
+
+        // 1. Exact hit on a qualified key (e.g. "England - Premier League")
+        if (_byLeague.containsKey(rawLeague)) return rawLeague
+
+        // 2. Short-name index lookup
+        val candidates = _qualifiedKeysByShortLeague[n] ?: return null
+        if (candidates.size == 1) return candidates.first()
+
+        // 3. Multiple candidates — use team context to disambiguate
+        if (contextTeams.isNotBlank()) {
+            val parts = contextTeams.split(" vs ", " v ", " – ", " — ", " - ", limit = 2)
+            for (part in parts) {
+                val entry = _byNormalizedName[normalize(part.trim())] ?: continue
+                val match = candidates.firstOrNull { it == entry.league }
+                if (match != null) return match
+            }
+        }
+        // Fall back to first candidate (alphabetically first country)
+        return candidates.minOrNull()
+    }
 
     // ── Normalisation helper (internal + exposed for matchers) ────────────────
 

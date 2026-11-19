@@ -57,10 +57,12 @@ fun isAcestreamLink(url: String) =
 
 /** Team crest from the bundled logos or the scraped URL; a coloured initials badge when neither exists. */
 @Composable
-fun Crest(name: String, leagueHint: String, logoUrl: String?, size: Dp) {
+fun Crest(name: String, leagueHint: String, logoUrl: String?, size: Dp, sport: String = "") {
     val known = remember(name, leagueHint) { TeamMatcher.lookupTeam(name, leagueHint) != null }
     if (known || logoUrl != null) {
         TeamLogo(name, size = size, leagueHint = leagueHint, logoUrl = logoUrl)
+    } else if (!isSoccer(sport)) {
+        SportBadge(sport, size)
     } else {
         val initials = remember(name) {
             name.split(" ", "-").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
@@ -68,6 +70,14 @@ fun Crest(name: String, leagueHint: String, logoUrl: String?, size: Dp) {
         Box(Modifier.size(size).background(CardRaised, CircleShape), contentAlignment = Alignment.Center) {
             Text(initials, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         }
+    }
+}
+
+/** A sport icon in a round badge, for events and teams that have no logo. */
+@Composable
+fun SportBadge(sport: String, size: Dp) {
+    Box(Modifier.size(size).background(CardRaised, CircleShape), contentAlignment = Alignment.Center) {
+        Icon(sportIcon(sport), contentDescription = sport, tint = TextSecondary, modifier = Modifier.size(size * 0.55f))
     }
 }
 
@@ -155,15 +165,17 @@ fun MatchCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 if (teams != null) {
-                    TeamColumn(teams.first, match.qualifiedLeagueKey, match.homeLogoUrl, Modifier.weight(1f))
+                    TeamColumn(teams.first, match.qualifiedLeagueKey, match.homeLogoUrl, match.sport, Modifier.weight(1f))
                     Text(
                         text = kickoff.ifBlank { "TBD" },
                         style = ScoreTimeStyle,
                         color = if (phase == MatchPhase.LIVE) LiveRed else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 6.dp),
                     )
-                    TeamColumn(teams.second, match.qualifiedLeagueKey, match.awayLogoUrl, Modifier.weight(1f))
+                    TeamColumn(teams.second, match.qualifiedLeagueKey, match.awayLogoUrl, match.sport, Modifier.weight(1f))
                 } else {
+                    SportBadge(match.sport, 40.dp)
+                    Box(Modifier.width(12.dp))
                     Text(
                         text = match.teams.ifBlank { "Teams to be announced" },
                         style = MaterialTheme.typography.titleMedium,
@@ -195,9 +207,9 @@ fun MatchCard(
 }
 
 @Composable
-private fun TeamColumn(name: String, leagueHint: String, logoUrl: String?, modifier: Modifier) {
+private fun TeamColumn(name: String, leagueHint: String, logoUrl: String?, sport: String, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Crest(name, leagueHint, logoUrl, size = 40.dp)
+        Crest(name, leagueHint, logoUrl, size = 40.dp, sport = sport)
         Text(
             text = name,
             style = MaterialTheme.typography.bodyMedium,

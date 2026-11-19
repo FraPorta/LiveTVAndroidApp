@@ -126,7 +126,7 @@ class Scraper(private val context: Context) {
         limit: Int = 0,
         offset: Int = 0
     ): List<Match> = withContext(Dispatchers.IO) {
-        val url = urlPreferences.getBaseUrl()
+        val url = urlFor(section)
         val baseOrigin = baseOriginOf(url)
         Log.d("Scraper", "Fetching initial match list from: $url (section: ${section.displayName})")
         try {
@@ -147,7 +147,7 @@ class Scraper(private val context: Context) {
      * @param section The section to scrape from
      */
     suspend fun scrapeAllMatches(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
-        val url = urlPreferences.getBaseUrl()
+        val url = urlFor(section)
         val baseOrigin = baseOriginOf(url)
         Log.d("Scraper", "Background scraping ALL matches from: $url (section: ${section.displayName})")
         try {
@@ -167,6 +167,14 @@ class Scraper(private val context: Context) {
      * Previously this identical `when` block was inlined — and duplicated — in both
      * [scrapeMatchList] and [scrapeAllMatches].
      */
+    /** The page to read for a tab: the configured source, or its sibling page for a sport tab. */
+    private fun urlFor(section: ScrapingSection): String {
+        val base = urlPreferences.getBaseUrl()
+        val page = section.sportPage ?: return base
+        val pattern = Regex("""/allupcomingsports/\d+/""")
+        return if (pattern.containsMatchIn(base)) base.replace(pattern, "/allupcomingsports/$page/") else base
+    }
+
     private fun parseSourceOffsetMinutes(doc: org.jsoup.nodes.Document): Int? =
         SourceTimeZone.parseOffsetMinutes(doc.text())
 
@@ -185,7 +193,9 @@ class Scraper(private val context: Context) {
                 doc
             }
         }
-        ScrapingSection.FOOTBALL -> {
+        // Football and the sport tabs: the page minus the mixed "top events" block, so only
+        // that sport's own schedule is left.
+        else -> {
             val copy = doc.clone()
             copy.select("#upcoming").remove()
             Log.d("Scraper", "Using document minus #upcoming for ${section.displayName} section")
@@ -333,7 +343,8 @@ class Scraper(private val context: Context) {
                 Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
                 footballMatches
             }
-            else -> uniqueMatches
+            // Sport tabs: the page is already that sport, so label every match with it.
+            else -> section.sportName?.let { name -> uniqueMatches.map { it.copy(sport = name) } } ?: uniqueMatches
         }
 
         // ── Pagination (limit = 0 means no limit) ─────────────────────────────

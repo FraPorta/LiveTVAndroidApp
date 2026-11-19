@@ -14,10 +14,22 @@ enum class MatchPhase { LIVE, UPCOMING, FINISHED }
  * Works out whether a match is live from its date header and kickoff time.
  *
  * Assumption: the times on the schedule page are in the device's time zone (they matched
- * the phone clock when checked). A match counts as live from kickoff for [LIVE_WINDOW_MIN].
+ * the phone clock when checked). A match counts as live from kickoff for a sport-dependent window (see [liveWindowMinutes]).
  */
 object MatchClock {
-    private const val LIVE_WINDOW_MIN = 135
+    private const val DEFAULT_LIVE_WINDOW_MIN = 135
+
+    /** How long after kickoff a match of this sport is still shown as live. */
+    private fun liveWindowMinutes(sport: String): Int {
+        val s = sport.lowercase()
+        return when {
+            s.contains("tennis") -> 240
+            s.contains("boxing") -> 180
+            s.contains("hockey") -> 165
+            s.contains("basket") || s.contains("racing") || s.contains("volley") -> 150
+            else -> DEFAULT_LIVE_WINDOW_MIN
+        }
+    }
     private val TIME = Regex("""(\d{1,2}):(\d{2})""")
     private val DAY_MONTH = Regex("""(\d{1,2})\s+([A-Za-z]{3})""")
     private val MONTHS = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
@@ -58,7 +70,7 @@ object MatchClock {
         val minutes = (now - start) / 60_000L
         return when {
             minutes < 0 -> MatchPhase.UPCOMING
-            minutes < LIVE_WINDOW_MIN -> MatchPhase.LIVE
+            minutes < liveWindowMinutes(match.sport) -> MatchPhase.LIVE
             else -> MatchPhase.FINISHED
         }
     }

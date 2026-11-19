@@ -97,7 +97,7 @@ fun SectionTabs(
 ) {
     val tabs = ScrapingSection.entries.map { section ->
         TabSpec(
-            label = if (section == ScrapingSection.TOP_EVENTS_LIVE) "Top live" else section.displayName,
+            label = section.displayName,
             selected = !favouritesOnly && currentSection == section,
             star = false,
             onClick = { onSectionChange(section) },

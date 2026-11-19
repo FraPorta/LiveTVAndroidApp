@@ -206,6 +206,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
             if (isBusy) {
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent, trackColor = Color.Transparent)
             }
+            FilterBar(viewModel, horizontalPadding = if (isCompactScreen) 16 else 32)
 
             if (viewModel.isSearchActive.value) SearchBar(viewModel = viewModel)
             val teamSuggestions by viewModel.teamSuggestions

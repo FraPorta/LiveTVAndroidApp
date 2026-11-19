@@ -161,7 +161,7 @@ fun StreamPanelContent(
                 val fav = canonical in favTeams
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (teams != null) {
-                        Crest(name, match.qualifiedLeagueKey, logo, size = 32.dp)
+                        Crest(name, match.qualifiedLeagueKey, logo, size = 32.dp, sport = match.sport)
                         Box(Modifier.size(10.dp))
                     }
                     Text(

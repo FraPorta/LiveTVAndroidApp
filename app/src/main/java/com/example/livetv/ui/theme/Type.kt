@@ -2,7 +2,10 @@ package com.example.livetv.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.example.livetv.R
 import androidx.compose.ui.unit.sp
 
 // Default M3 typography as base — keep Roboto (no extra font dependency)
@@ -43,4 +46,14 @@ val BadgeTextStyle = TextStyle(
     fontWeight    = FontWeight.Bold,
     fontSize      = 11.sp,
     letterSpacing = 0.sp,
+)
+
+/** Condensed scoreboard font (Barlow Condensed, OFL) for kickoff times and minutes. */
+val ScoreFont = FontFamily(Font(R.font.barlow_condensed_medium, FontWeight.Medium))
+
+val ScoreTimeStyle = TextStyle(
+    fontFamily = ScoreFont,
+    fontWeight = FontWeight.Medium,
+    fontSize   = 28.sp,
+    letterSpacing = 0.5.sp,
 )

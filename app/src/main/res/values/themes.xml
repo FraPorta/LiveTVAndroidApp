@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- DayNight base: window background matches Compose dark theme on older APIs
-         to prevent white flash during app launch. -->
-    <style name="Theme.LiveTV" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+    <!-- Always dark: the window background matches the Compose theme so there is no flash on launch. -->
+    <style name="Theme.LiveTV" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+    </style>
 </resources>

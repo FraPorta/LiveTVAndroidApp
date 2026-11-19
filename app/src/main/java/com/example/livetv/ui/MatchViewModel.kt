@@ -95,6 +95,15 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
      */
     val favouriteMatchUrls = mutableStateOf<Set<String>>(emptySet())
 
+    /** When true only matches involving a favourite team or league are listed. */
+    val showFavouritesOnly = mutableStateOf(false)
+
+    fun setFavouritesOnly(enabled: Boolean) {
+        if (showFavouritesOnly.value == enabled) return
+        showFavouritesOnly.value = enabled
+        applyFilters()
+    }
+
     private var currentVisibleCount: Int
         get() = currentSectionData().currentVisibleCount
         set(value) { sectionCache[selectedSection.value] = currentSectionData().copy(currentVisibleCount = value) }
@@ -346,6 +355,9 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
 
         // Pin favourite matches to the top of every section (O(1) set lookup, not linear scan)
         val favUrls = favouriteMatchUrls.value
+        if (showFavouritesOnly.value) {
+            filtered = filtered.filter { it.detailPageUrl in favUrls }
+        }
         val (favs, rest) = filtered.partition { it.detailPageUrl in favUrls }
         filtered = favs + rest
         
@@ -448,7 +460,7 @@ class MatchViewModel(application: Application) : AndroidViewModel(application) {
      * Check if any filters are currently active
      */
     private fun hasActiveFilters(): Boolean {
-        return selectedSport.value != null || selectedLeague.value != null
+        return selectedSport.value != null || selectedLeague.value != null || showFavouritesOnly.value
     }
 
     /**

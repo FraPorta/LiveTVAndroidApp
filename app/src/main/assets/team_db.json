@@ -832,7 +832,9 @@
   },
   {
     "name": "Paris FC",
-    "aliases": [],
+    "aliases": [
+      "Paris"
+    ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/Paris FC.png"
   },
@@ -842,8 +844,7 @@
       "PSG",
       "Paris Saint Germain",
       "Paris SG",
-      "PSG FC",
-      "Paris"
+      "PSG FC"
     ],
     "league": "France - Ligue 1",
     "logoAssetPath": "logos/France - Ligue 1/Paris Saint-Germain.png"

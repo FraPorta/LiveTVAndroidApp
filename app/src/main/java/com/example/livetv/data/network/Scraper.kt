@@ -39,6 +39,9 @@ class Scraper(private val context: Context) {
 
     private val urlPreferences = UrlPreferences(context)
 
+    // OkHttp's standard certificate-to-hostname check, applied after the allowed-host rule below.
+    private val defaultHostnameVerifier = OkHttpClient().hostnameVerifier
+
     // FIX #15: A single OkHttpClient is reused for all scraping calls so the connection pool,
     // thread pool, and SSL session cache are shared. The hostname verifier reads the configured
     // base URL at verification time, so it stays correct when the user changes the URL at runtime.
@@ -50,15 +53,16 @@ class Scraper(private val context: Context) {
             // (up to 16 at initial load) all run in true parallel rather than
             // queuing against the OkHttp default of 5 connections.
             .connectionPool(okhttp3.ConnectionPool(20, 5, java.util.concurrent.TimeUnit.MINUTES))
-            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
-            .hostnameVerifier { hostname, _ ->
+            // The system trust store validates every certificate (no trust-all manager), and
+            // the hostname must both be the configured source and match its certificate.
+            .hostnameVerifier { hostname, session ->
                 val allowedHost = try {
                     java.net.URI(urlPreferences.getBaseUrl()).host ?: ""
                 } catch (_: Exception) { "" }
                 val allowed = allowedHost.isNotEmpty() &&
                     (hostname == allowedHost || hostname.endsWith(".$allowedHost"))
                 if (!allowed) Log.w("Scraper", "SSL hostname rejected: $hostname (expected $allowedHost)")
-                allowed
+                allowed && defaultHostnameVerifier.verify(hostname, session)
             }
             .build()
     }
@@ -908,21 +912,6 @@ class Scraper(private val context: Context) {
             // URL can skip the network round-trip entirely.
             htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())
             content
-        }
-    }
-
-    private fun createInsecureSslSocketFactory(): javax.net.ssl.SSLSocketFactory {
-        val trustAllManager = createTrustAllManager()
-        val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
-        sslContext.init(null, arrayOf(trustAllManager), java.security.SecureRandom())
-        return sslContext.socketFactory
-    }
-
-    private fun createTrustAllManager(): javax.net.ssl.X509TrustManager {
-        return object : javax.net.ssl.X509TrustManager {
-            override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
         }
     }
 

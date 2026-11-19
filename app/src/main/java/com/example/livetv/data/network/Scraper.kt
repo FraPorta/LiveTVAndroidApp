@@ -13,6 +13,8 @@ import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
 import com.example.livetv.data.model.Match
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -38,6 +40,8 @@ data class StreamFetchResult(
 class Scraper(private val context: Context) {
 
     private val urlPreferences = UrlPreferences(context)
+
+    private val detailFetchLimit = kotlinx.coroutines.sync.Semaphore(4)
 
     // OkHttp's standard certificate-to-hostname check, applied after the allowed-host rule below.
     private val defaultHostnameVerifier = OkHttpClient().hostnameVerifier
@@ -96,6 +100,8 @@ class Scraper(private val context: Context) {
         private val RELATIVE_DATE_REGEX = Regex("""
             \b(?:today|tomorrow|yesterday)\b
         """.trimIndent(), setOf(RegexOption.COMMENTS, RegexOption.IGNORE_CASE))
+
+        private const val MAX_RATE_LIMIT_RETRIES = 2
 
         val FOOTBALL_KEYWORDS: Set<String> = setOf(
             "football", "soccer", "premier", "liga", "bundesliga", "serie a",
@@ -613,7 +619,8 @@ class Scraper(private val context: Context) {
         Log.d("Scraper", "Fetching stream links from: $detailPageUrl")
         
         try {
-            val html = fetchHtmlWithOkHttp(detailPageUrl)
+            // Only a few detail pages at a time, so the site is not flooded (and does not answer 429).
+            val html = detailFetchLimit.withPermit { fetchHtmlWithOkHttp(detailPageUrl) }
             val doc = Jsoup.parse(html, detailPageUrl)
             val links = mutableSetOf<String>()
 
@@ -912,23 +919,41 @@ class Scraper(private val context: Context) {
             .header("Cache-Control", "no-cache")
             .build()
 
-        scrapingClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                Log.e("Scraper", "HTTP error: ${response.code} - ${response.message}")
-                throw java.io.IOException("HTTP error: ${response.code}")
+        // The site answers 429 (or 503) when it is asked for too much at once. Wait as long as it
+        // says (capped) and try again a couple of times before giving up.
+        for (attempt in 0..MAX_RATE_LIMIT_RETRIES) {
+            val outcome = scrapingClient.newCall(request).execute().use { response ->
+                if (response.code == 429 || response.code == 503) {
+                    val waitMs = (response.header("Retry-After")?.trim()?.toLongOrNull()?.times(1000L)
+                        ?: (1_000L shl attempt)).coerceIn(500L, 8_000L)
+                    return@use FetchOutcome(null, waitMs)
+                }
+                if (!response.isSuccessful) {
+                    Log.e("Scraper", "HTTP error: ${response.code} - ${response.message}")
+                    throw java.io.IOException("HTTP error: ${response.code}")
+                }
+
+                val body = response.body
+                    ?: throw java.io.IOException("Empty response body")
+
+                val content = body.string()
+                if (BuildConfig.DEBUG) Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
+                // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
+                // URL can skip the network round-trip entirely.
+                htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())
+                FetchOutcome(content, 0L)
             }
-
-            val body = response.body
-                ?: throw java.io.IOException("Empty response body")
-
-            val content = body.string()
-            if (BuildConfig.DEBUG) Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
-            // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
-            // URL can skip the network round-trip entirely.
-            htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())
-            content
+            outcome.html?.let { return@withContext it }
+            if (attempt < MAX_RATE_LIMIT_RETRIES) {
+                Log.d("Scraper", "Rate limited, retry ${attempt + 1} in ${outcome.retryAfterMs} ms: $url")
+                delay(outcome.retryAfterMs)
+            }
         }
+        Log.w("Scraper", "Still rate limited after $MAX_RATE_LIMIT_RETRIES retries: $url")
+        throw java.io.IOException("HTTP error: 429")
     }
+
+    private class FetchOutcome(val html: String?, val retryAfterMs: Long)
 
     // A private class that will act as the bridge between JavaScript and Kotlin
     private class WebAppInterface(private val onHtmlReady: (String) -> Unit) {

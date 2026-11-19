@@ -4,8 +4,15 @@ A modern Android TV app for streaming. Features a clean Material Design interfac
 
 ![Build Status](https://github.com/FraPorta/LiveTVAndroidApp/workflows/Build%20and%20Release%20Android%20APK/badge.svg)
 
-## Android TV Interface  
-<img src="docs/Screenshot_20251003_112557.png" alt="Android TV Interface" width="560" />
+## Screenshots
+
+**Android TV**
+
+<img src="docs/screenshot-tv-home.png" alt="TV home with scoreboard match cards" width="440" /> <img src="docs/screenshot-tv-streams.png" alt="TV stream panel" width="440" />
+
+**Phone**
+
+<img src="docs/screenshot-phone-home.png" alt="Phone home" width="220" /> <img src="docs/screenshot-phone-streams.png" alt="Phone stream sheet" width="220" />
 
 ## 📱 Download & Install
 
@@ -24,13 +31,15 @@ A modern Android TV app for streaming. Features a clean Material Design interfac
 ## ✨ Features
 
 - **🏈 Football Focus**: Football matches as the default section
-- **🎨 Modern UI**: Material Design 3 with responsive layout
+- **🎨 Modern UI**: Dark scoreboard look with live matches, day sections and remote-friendly focus
 - **📱 Responsive**: Optimized for TV, tablet, and phone screens
-- **⚡ Performance**: Pagination for faster loading
+- **⭐ Favourites**: Star teams and leagues, and see only their matches in the Favourites tab
+- **▶️ Stream panel**: Every stream in one place, with the last one you used listed first
+- **⚡ Performance**: Matches load as you scroll
 - **🔄 Auto-Update**: Built-in update system checks GitHub releases
 - **🔒 Secure Updates**: Signed APK verification for safe installations  
 - **🌐 Multi-Source**: Acestream, M3U8, RTMP, and web streams
-- **⚙️ Configurable**: Customizable scraping source URLs
+- **⚙️ Configurable**: Scraping source and Acestream IP in Settings
 
 ## 🚀 Quick Start
 

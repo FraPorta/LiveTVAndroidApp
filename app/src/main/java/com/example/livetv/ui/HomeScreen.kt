@@ -1,49 +1,85 @@
 package com.example.livetv.ui
 
-import androidx.compose.animation.core.Animatable
+import android.app.Activity
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.SportsSoccer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.runtime.*
-import androidx.activity.compose.BackHandler
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
-import android.app.Activity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.livetv.data.model.Match
-import com.example.livetv.data.model.ScrapingSection
+import com.example.livetv.ui.theme.Accent
+import com.example.livetv.ui.theme.AppBackground
+import com.example.livetv.ui.theme.CardRaised
+import com.example.livetv.ui.theme.LiveRed
+import com.example.livetv.ui.theme.PanelColor
+import com.example.livetv.ui.theme.TextSecondary
 import com.example.livetv.ui.updater.UpdateDialog
 import com.example.livetv.ui.updater.UpdateViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,472 +88,291 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     val isLoading by viewModel.isLoadingInitialList
     val errorMessage by viewModel.errorMessage
     val isRefreshing by viewModel.isRefreshing
-    
-    // FIX #29: UpdateViewModel is now AndroidViewModel; the default viewModel() factory
-    // automatically injects Application so no custom factory is needed.
+    val isLoadingMore by viewModel.isLoadingMore
+    val favouritesOnly by viewModel.showFavouritesOnly
+    val favouriteMatchUrls by viewModel.favouriteMatchUrls
+    val section by viewModel.selectedSection
+
     val updateViewModel: UpdateViewModel = viewModel()
     var showUpdateDialog by remember { mutableStateOf(false) }
-
-    // Always show headers and main layout, only content area changes based on state
-    val configuration = LocalConfiguration.current
-    val isCompactScreen = configuration.screenWidthDp < 600 // Tablet breakpoint
-    val focusRequester = remember { FocusRequester() }
-    // Returns focus to the collapsed card after Back is pressed
-    val collapsedCardFocusRequester = remember { FocusRequester() }
-
-    // Which match card is currently expanded (null = all collapsed)
-    var expandedMatchUrl by remember { mutableStateOf<String?>(null) }
-
-    // Tracks whether focus is inside the grid area (TV only) — used to decide
-    // whether Back should move focus to the header or let the system close the app
-    var gridAreaHasFocus by remember { mutableStateOf(false) }
-
-    // Exit-confirmation dialog state
+    var showSettings by remember { mutableStateOf(false) }
     var showExitConfirmDialog by remember { mutableStateOf(false) }
+
+    val configuration = LocalConfiguration.current
+    val isCompactScreen = configuration.screenWidthDp < 600
     val activity = LocalContext.current as? Activity
 
-    // Grid scroll state — used to scroll the expanded card into view
+    val rootFocus = remember { FocusRequester() }
+    val returnFocus = remember { FocusRequester() }
+    var gridAreaHasFocus by remember { mutableStateOf(false) }
+
+    // The match whose streams are open (null = none)
+    var selectedUrl by remember { mutableStateOf<String?>(null) }
+    val selectedMatch: Match? = visibleMatches.firstOrNull { it.detailPageUrl == selectedUrl }
+    var lastShown by remember { mutableStateOf<Match?>(null) }
+    LaunchedEffect(selectedMatch) { if (selectedMatch != null) lastShown = selectedMatch }
+
+    fun closePanel() {
+        selectedUrl = null
+        try { returnFocus.requestFocus() } catch (_: Exception) {}
+    }
+
+    // Re-evaluate live / finished once a minute
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            now = System.currentTimeMillis()
+        }
+    }
+    val feed = remember(visibleMatches, now) { buildFeed(visibleMatches, now) }
+
+    // Spinner angle for the refresh button
+    val isBusy = isRefreshing || viewModel.isBackgroundScraping.value
+    val spin by rememberInfiniteTransition(label = "spin").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart),
+        label = "spinAngle",
+    )
+
     val gridState = rememberLazyGridState()
-    LaunchedEffect(expandedMatchUrl) {
-        if (expandedMatchUrl != null) {
-            val idx = visibleMatches.indexOfFirst { it.detailPageUrl == expandedMatchUrl }
-            if (idx >= 0) {
-                // Anchor card top to the grid top so the TV focus auto-scroll
-                // for the stream buttons cannot push the card header off-screen
-                gridState.animateScrollToItem(index = idx, scrollOffset = 0)
-            }
+    val nearEnd by remember {
+        derivedStateOf {
+            val info = gridState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount > 0 && last >= info.totalItemsCount - 4
+        }
+    }
+    LaunchedEffect(nearEnd, feed.size) {
+        if (nearEnd && !viewModel.isSearchActive.value && !isLoadingMore && !isLoading) {
+            viewModel.loadMoreMatches()
         }
     }
 
-    // Intercept the Activity back press when a card is expanded — collapse it instead of closing the app
-    BackHandler(enabled = expandedMatchUrl != null) {
-        expandedMatchUrl = null
-        try { collapsedCardFocusRequester.requestFocus() } catch (_: Exception) {}
-    }
-
-    // On TV, when no card is expanded but focus is in the grid, Back moves focus to the header
-    BackHandler(enabled = !isCompactScreen && expandedMatchUrl == null && gridAreaHasFocus) {
+    // Back: close the panel first, then (TV) move focus to the header, then ask before exiting
+    BackHandler(enabled = selectedUrl != null) { closePanel() }
+    BackHandler(enabled = !isCompactScreen && selectedUrl == null && gridAreaHasFocus) {
         gridAreaHasFocus = false
-        try { focusRequester.requestFocus() } catch (_: Exception) {}
+        try { rootFocus.requestFocus() } catch (_: Exception) {}
     }
-
-    // Final fallback: show exit confirmation instead of immediately closing the app
-    BackHandler(enabled = expandedMatchUrl == null && (isCompactScreen || !gridAreaHasFocus)) {
+    BackHandler(enabled = selectedUrl == null && (isCompactScreen || !gridAreaHasFocus)) {
         showExitConfirmDialog = true
     }
-
-    // Pull-to-refresh state
-    val pullRefreshState = rememberPullToRefreshState()
-
-    // Request focus for TV key handling
     LaunchedEffect(isCompactScreen) {
         if (!isCompactScreen) {
-            focusRequester.requestFocus()
+            try { rootFocus.requestFocus() } catch (_: Exception) {}
         }
     }
-    
-    // Exit confirmation dialog
+
     if (showExitConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showExitConfirmDialog = false },
             title = { Text("Exit LiveTV?") },
-            text  = { Text("Are you sure you want to close the app?") },
-            confirmButton = {
-                TextButton(onClick = { activity?.finish() }) {
-                    Text("Exit")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showExitConfirmDialog = false }) {
-                    Text("Cancel")
-                }
-            },
+            text = { Text("Close the app?") },
+            confirmButton = { TextButton(onClick = { activity?.finish() }) { Text("Exit") } },
+            dismissButton = { TextButton(onClick = { showExitConfirmDialog = false }) { Text("Cancel") } },
         )
     }
 
-    // Handle TV remote key presses
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .focusRequester(focusRequester)
-            .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyUp) {
-                    when (keyEvent.key) {
-                        Key.R -> {
-                            // R key to refresh (TV remote)
-                            viewModel.refreshCurrentSection()
-                            true
+            .background(AppBackground)
+            .focusRequester(rootFocus)
+            .onKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyUp && ev.key == Key.R) {
+                    viewModel.refreshCurrentSection()
+                    true
+                } else false
+            },
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            TopBar(
+                compact = isCompactScreen,
+                currentSection = section,
+                favouritesOnly = favouritesOnly,
+                onSectionChange = { s ->
+                    viewModel.setFavouritesOnly(false)
+                    viewModel.changeSection(s)
+                },
+                onFavourites = { viewModel.setFavouritesOnly(!favouritesOnly) },
+                onSearch = { viewModel.activateSearch() },
+                onRefresh = { viewModel.refreshCurrentSection() },
+                onSettings = { showSettings = true },
+                spin = if (isBusy) spin else 0f,
+                showRefresh = !isCompactScreen,
+            )
+            if (isBusy) {
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent, trackColor = Color.Transparent)
+            }
+            FilterBar(viewModel, horizontalPadding = if (isCompactScreen) 16 else 32)
+
+            if (viewModel.isSearchActive.value) SearchBar(viewModel = viewModel)
+            val teamSuggestions by viewModel.teamSuggestions
+            val leagueSuggestions by viewModel.leagueSuggestions
+            if (viewModel.isSearchActive.value && (teamSuggestions.isNotEmpty() || leagueSuggestions.isNotEmpty())) {
+                SearchSuggestions(
+                    suggestions = teamSuggestions,
+                    leagueSuggestions = leagueSuggestions,
+                    favouriteTeams = viewModel.favouriteTeams.value,
+                    favouriteLeagues = viewModel.favouriteLeagues.value,
+                    onSuggestionTap = { entry -> viewModel.updateSearchQuery(entry.name) },
+                    onLeagueTap = { league -> viewModel.updateSearchQuery(league) },
+                    onToggleTeamFavourite = { name -> viewModel.toggleFavouriteTeam(name) },
+                    onToggleLeagueFavourite = { league -> viewModel.toggleFavouriteLeague(league) },
+                )
+            }
+
+            val minCard = if (isCompactScreen) 320 else 280
+            val contentArea: @Composable () -> Unit = {
+                when {
+                    isLoading -> SkeletonGrid(minCard)
+                    errorMessage != null -> MessageState(
+                        icon = Icons.Default.CloudOff,
+                        title = "Couldn't load matches",
+                        body = errorMessage.orEmpty(),
+                        actionLabel = "Retry",
+                        onAction = { viewModel.loadInitialMatchList() },
+                    )
+                    feed.isEmpty() -> MessageState(
+                        icon = Icons.Default.SportsSoccer,
+                        title = if (favouritesOnly) "No favourite matches" else "No matches found",
+                        body = if (favouritesOnly) "Star a team or league in a match's details to see its games here."
+                               else "Pull down or refresh to check again.",
+                        actionLabel = if (favouritesOnly) "Show all matches" else "Refresh",
+                        onAction = {
+                            if (favouritesOnly) viewModel.setFavouritesOnly(false) else viewModel.loadInitialMatchList()
+                        },
+                    )
+                    else -> LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minCard.dp),
+                        state = gridState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusProperties { canFocus = selectedUrl == null },
+                        contentPadding = PaddingValues(
+                            horizontal = if (isCompactScreen) 16.dp else 32.dp,
+                            vertical = 8.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(
+                            items = feed,
+                            key = { item ->
+                                when (item) {
+                                    is FeedItem.Header -> "header:${item.title}"
+                                    is FeedItem.Entry -> item.match.detailPageUrl
+                                }
+                            },
+                            span = { item ->
+                                if (item is FeedItem.Header) GridItemSpan(maxLineSpan) else GridItemSpan(1)
+                            },
+                            contentType = { item -> item::class },
+                        ) { item ->
+                            when (item) {
+                                is FeedItem.Header -> SectionHeader(item)
+                                is FeedItem.Entry -> MatchCard(
+                                    match = item.match,
+                                    phase = item.phase,
+                                    isFavourite = item.match.detailPageUrl in favouriteMatchUrls,
+                                    onClick = { selectedUrl = item.match.detailPageUrl },
+                                    focusRequester = if (item.match.detailPageUrl == selectedUrl) returnFocus else null,
+                                )
+                            }
                         }
-                        else -> false
+                        if (isLoadingMore) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = Accent)
+                                }
+                            }
+                        }
                     }
-                } else {
-                    false
                 }
             }
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-                    if (isCompactScreen) {
-                        // Smartphone layout - separate rows
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // URL configuration and action buttons row
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // URL configuration header
-                                UrlConfigHeader(
-                                    currentUrl = viewModel.getBaseUrl(),
-                                    onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
-                                    onResetUrl = { viewModel.resetBaseUrl() },
-                                    currentAcestreamIp = viewModel.getAcestreamIp(),
-                                    onAcestreamIpUpdate = { newIp -> viewModel.updateAcestreamIp(newIp) },
-                                    onResetAcestreamIp = { viewModel.resetAcestreamIp() },
-                                    isCompact = true,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                
-                                // Action buttons (search and update) - compact version
-                                ActionButtons(
-                                    onSearchClick = { viewModel.activateSearch() },
-                                    onShowUpdateDialog = { showUpdateDialog = true },
-                                    onRefreshClick = { viewModel.refreshCurrentSection() },
-                                    isBackgroundScraping = viewModel.isBackgroundScraping.value,
-                                    isRefreshing = isRefreshing,
-                                    isCompact = true,
-                                    showRefreshButton = false // Mobile uses pull-to-refresh
-                                )
-                            }
-                            
-                            // Section selector
-                            SectionSelector(
-                                currentSection = viewModel.selectedSection.value,
-                                onSectionChange = { section -> viewModel.changeSection(section) },
-                                modifier = Modifier.fillMaxWidth(),
-                                isCompact = false
-                            )
-                        }
-                    } else {
-                        // Tablet/TV layout - same row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // URL configuration header (takes up more space)
-                            UrlConfigHeader(
-                                currentUrl = viewModel.getBaseUrl(),
-                                onUrlUpdate = { newUrl -> viewModel.updateBaseUrl(newUrl) },
-                                onResetUrl = { viewModel.resetBaseUrl() },
-                                currentAcestreamIp = viewModel.getAcestreamIp(),
-                                onAcestreamIpUpdate = { newIp -> viewModel.updateAcestreamIp(newIp) },
-                                onResetAcestreamIp = { viewModel.resetAcestreamIp() },
-                                isCompact = false,
-                                modifier = Modifier.weight(2f)
-                            )
-                            
-                            // Section selector (takes up less space)
-                            SectionSelector(
-                                currentSection = viewModel.selectedSection.value,
-                                onSectionChange = { section -> viewModel.changeSection(section) },
-                                modifier = Modifier.weight(1f),
-                                isCompact = true
-                            )
-                            
-                            // Action buttons (search, refresh, and update)
-                            ActionButtons(
-                                onSearchClick = { viewModel.activateSearch() },
-                                onShowUpdateDialog = { showUpdateDialog = true },
-                                onRefreshClick = { viewModel.refreshCurrentSection() },
-                                isBackgroundScraping = viewModel.isBackgroundScraping.value,
-                                isRefreshing = isRefreshing,
-                                isCompact = true,
-                                showRefreshButton = true // TV/tablet shows refresh button
-                            )
-                        }
-                    }
-                    
-                    // Search functionality - only show when active
-                    if (viewModel.isSearchActive.value) {
-                        SearchBar(viewModel = viewModel)
-                    }
 
-                    // Team + league suggestion chips — shown above the grid while search is active
-                    val teamSuggestions   by viewModel.teamSuggestions
-                    val leagueSuggestions by viewModel.leagueSuggestions
-                    if (viewModel.isSearchActive.value &&
-                        (teamSuggestions.isNotEmpty() || leagueSuggestions.isNotEmpty())) {
-                        SearchSuggestions(
-                            suggestions             = teamSuggestions,
-                            leagueSuggestions       = leagueSuggestions,
-                            favouriteTeams          = viewModel.favouriteTeams.value,
-                            favouriteLeagues        = viewModel.favouriteLeagues.value,
-                            onSuggestionTap         = { entry -> viewModel.updateSearchQuery(entry.name) },
-                            onLeagueTap             = { league -> viewModel.updateSearchQuery(league) },
-                            onToggleTeamFavourite   = { name -> viewModel.toggleFavouriteTeam(name) },
-                            onToggleLeagueFavourite = { league -> viewModel.toggleFavouriteLeague(league) },
-                        )
-                    }
-                    
-                    // Content area - pull-to-refresh only on phone; TV uses the Refresh button
-                    val contentArea: @Composable () -> Unit = {
-                        when {
-                            isLoading -> {
-                                // Loading state - only covers content area
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    SpinningIcon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Loading",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(text = "Fetching match list...", color = MaterialTheme.colorScheme.onBackground)
-                                }
-                            }
-                            errorMessage != null -> {
-                                // Error screen - only covers content area
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Text(text = "Error: $errorMessage")
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Button(
-                                        onClick = { viewModel.loadInitialMatchList() },
-                                        modifier = Modifier.focusable(),
-                                    ) {
-                                        Text(text = "Retry")
-                                    }
-                                }
-                            }
-                            visibleMatches.isEmpty() -> {
-                                // Empty state - only covers content area
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Text(text = "No matches found.")
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Button(
-                                        onClick = { viewModel.loadInitialMatchList() },
-                                        modifier = Modifier.focusable(),
-                                    ) {
-                                        Text(text = "Refresh")
-                                    }
-                                }
-                            }
-                            else -> {
-                                // Match grid - responsive layout (1 column mobile, 2 columns TV)
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(if (isCompactScreen) 1 else 2),
-                                    state = gridState,
-                                    // On TV: disable grid scroll while a card is expanded so focus
-                                    // movements inside the card don't scroll the grid and hide the header.
-                                    // On mobile: always allow scrolling.
-                                    userScrollEnabled = isCompactScreen || expandedMatchUrl == null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp), // Space between rows
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp) // Space between columns
-                                ) {
-                                    // FIX #19: Use the stable detailPageUrl as the item key
-                                    // so Compose can correctly identity and diff items on recomposition
-                                    // (index-based keys cause incorrect animations and unnecessary
-                                    // recomposition when the list order changes).
-                                    val favouriteMatchUrls by viewModel.favouriteMatchUrls
-                                    itemsIndexed(visibleMatches, key = { _, match -> match.detailPageUrl }) { _, match ->
-                                        MatchItem(
-                                            match = match,
-                                            viewModel = viewModel,
-                                            isExpanded = expandedMatchUrl == match.detailPageUrl,
-                                            onExpand = { expandedMatchUrl = match.detailPageUrl },
-                                            onCollapse = { expandedMatchUrl = null },
-                                            collapsedFocusRequester = if (expandedMatchUrl == match.detailPageUrl)
-                                                collapsedCardFocusRequester
-                                            else
-                                                null,
-                                            isFavourite = match.detailPageUrl in favouriteMatchUrls
-                                        )
-                                    }
+            if (isCompactScreen) {
+                PullToRefreshBox(
+                    isRefreshing = isRefreshing,
+                    onRefresh = { viewModel.refreshCurrentSection() },
+                    modifier = Modifier.weight(1f),
+                ) { contentArea() }
+            } else {
+                Box(Modifier.weight(1f).onFocusChanged { gridAreaHasFocus = it.hasFocus }) { contentArea() }
+            }
+        }
 
-                                    // Only show "Load More" button when search is not active
-                                    if (!viewModel.isSearchActive.value) {
-                                        item(span = { GridItemSpan(maxLineSpan) }) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 16.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                OutlinedButton(
-                                                    onClick   = { viewModel.loadMoreMatches() },
-                                                    modifier  = Modifier.focusable(),
-                                                    shape     = MaterialTheme.shapes.small,
-                                                ) {
-                                                    Text(
-                                                        "Load More Matches",
-                                                        style = MaterialTheme.typography.labelLarge,
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+        // ── Streams: side panel on TV / tablet, bottom sheet on phones ──────────
+        if (!isCompactScreen) {
+            AnimatedVisibility(visible = selectedUrl != null, enter = fadeIn(), exit = fadeOut()) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)))
+            }
+            AnimatedVisibility(
+                visible = selectedUrl != null,
+                modifier = Modifier.align(Alignment.CenterEnd),
+                enter = slideInHorizontally(tween(220)) { it } + fadeIn(tween(220)),
+                exit = slideOutHorizontally(tween(180)) { it } + fadeOut(tween(180)),
+            ) {
+                Surface(
+                    modifier = Modifier.width(400.dp).fillMaxHeight(),
+                    color = PanelColor,
+                    shape = MaterialTheme.shapes.large.copy(topEnd = androidx.compose.foundation.shape.ZeroCornerSize, bottomEnd = androidx.compose.foundation.shape.ZeroCornerSize),
+                ) {
+                    lastShown?.let { m ->
+                        StreamPanelContent(match = selectedMatch ?: m, viewModel = viewModel, onClose = { closePanel() })
                     }
-                    if (isCompactScreen) {
-                        PullToRefreshBox(
-                            isRefreshing = isRefreshing,
-                            onRefresh = { viewModel.refreshCurrentSection() },
-                            state = pullRefreshState,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            contentArea()
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .onFocusChanged { gridAreaHasFocus = it.hasFocus }
-                        ) {
-                            contentArea()
-                        }
-                    }
+                }
+            }
+        } else if (selectedMatch != null) {
+            ModalBottomSheet(
+                onDismissRequest = { selectedUrl = null },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = PanelColor,
+            ) {
+                StreamPanelContent(
+                    match = selectedMatch,
+                    viewModel = viewModel,
+                    onClose = { selectedUrl = null },
+                    modifier = Modifier.navigationBarsPadding(),
+                )
+            }
         }
     }
-    
-    // Update Dialog
-    if (showUpdateDialog) {
-        UpdateDialog(
-            updateViewModel = updateViewModel,
-            onDismiss = { showUpdateDialog = false }
+
+    if (showSettings) {
+        SettingsDialog(
+            currentUrl = viewModel.getBaseUrl(),
+            currentAcestreamIp = viewModel.getAcestreamIp(),
+            onUrlUpdate = { viewModel.updateBaseUrl(it) },
+            onResetUrl = { viewModel.resetBaseUrl() },
+            onAcestreamIpUpdate = { viewModel.updateAcestreamIp(it) },
+            onResetAcestreamIp = { viewModel.resetAcestreamIp() },
+            onCheckForUpdates = { showUpdateDialog = true },
+            onDismiss = { showSettings = false },
         )
+    }
+    if (showUpdateDialog) {
+        UpdateDialog(updateViewModel = updateViewModel, onDismiss = { showUpdateDialog = false })
     }
 }
 
 @Composable
-fun ActionButtons(
-    onSearchClick: () -> Unit,
-    onShowUpdateDialog: () -> Unit,
-    onRefreshClick: () -> Unit = {},
-    isBackgroundScraping: Boolean = false,
-    isRefreshing: Boolean = false,
-    isCompact: Boolean = false,
-    showRefreshButton: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-    val isSpinning = isBackgroundScraping || isRefreshing
-    // Animatable only drives frame callbacks while isSpinning == true, saving
-    // wasted 60 fps main-thread work when the app is idle.
-    val spinAnim = remember { Animatable(0f) }
-    LaunchedEffect(isSpinning) {
-        if (isSpinning) {
-            while (true) {
-                spinAnim.animateTo(
-                    targetValue = spinAnim.value + 360f,
-                    animationSpec = tween(durationMillis = 800, easing = LinearEasing)
-                )
-                spinAnim.snapTo(0f)
-            }
-        } else {
-            spinAnim.stop()
-        }
-    }
-    val spinRotation = spinAnim.value
-
-    Surface(
-        modifier       = modifier,
-        color          = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape          = MaterialTheme.shapes.medium,
-        tonalElevation = 3.dp,
+private fun SectionHeader(item: FeedItem.Header) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier              = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment     = Alignment.CenterVertically,
+        if (item.title == "Live now") {
+            Box(Modifier.size(8.dp).background(LiveRed, CircleShape))
+            Box(Modifier.width(8.dp))
+        }
+        Text(item.title, style = MaterialTheme.typography.titleMedium)
+        Box(
+            Modifier.padding(start = 8.dp).background(CardRaised, CircleShape).padding(horizontal = 8.dp, vertical = 2.dp),
         ) {
-            // Search button
-            FocusableButton(
-                onClick = onSearchClick,
-                backgroundColor = MaterialTheme.colorScheme.tertiary,
-                contentColor = MaterialTheme.colorScheme.onTertiary,
-                focusColor = MaterialTheme.colorScheme.primary
-            ) {
-                if (isBackgroundScraping) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Loading",
-                        tint = MaterialTheme.colorScheme.onTertiary,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .graphicsLayer { rotationZ = spinRotation }
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search matches",
-                        tint = MaterialTheme.colorScheme.onTertiary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            // Refresh button (for TV/tablet)
-            if (showRefreshButton) {
-                FocusableButton(
-                    onClick = onRefreshClick,
-                    backgroundColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    focusColor = MaterialTheme.colorScheme.tertiary
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = if (isRefreshing) "Refreshing" else "Refresh matches",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = if (isRefreshing) {
-                            Modifier
-                                .size(20.dp)
-                                .graphicsLayer { rotationZ = spinRotation }
-                        } else {
-                            Modifier.size(20.dp)
-                        }
-                    )
-                }
-                
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            
-            // Update button
-            FocusableButton(
-                onClick         = onShowUpdateDialog,
-                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor    = MaterialTheme.colorScheme.onSecondaryContainer,
-                focusColor      = MaterialTheme.colorScheme.primary,
-            ) {
-                Icon(
-                    imageVector        = Icons.Default.Info,
-                    contentDescription = "Check for Updates",
-                    tint               = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier           = Modifier.size(20.dp),
-                )
-            }
+            Text("${item.count}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
         }
     }
 }

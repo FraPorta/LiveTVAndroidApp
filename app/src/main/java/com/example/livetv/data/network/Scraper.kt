@@ -13,6 +13,8 @@ import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
 import com.example.livetv.data.model.Match
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -39,6 +41,11 @@ class Scraper(private val context: Context) {
 
     private val urlPreferences = UrlPreferences(context)
 
+    private val detailFetchLimit = kotlinx.coroutines.sync.Semaphore(4)
+
+    // OkHttp's standard certificate-to-hostname check, applied after the allowed-host rule below.
+    private val defaultHostnameVerifier = OkHttpClient().hostnameVerifier
+
     // FIX #15: A single OkHttpClient is reused for all scraping calls so the connection pool,
     // thread pool, and SSL session cache are shared. The hostname verifier reads the configured
     // base URL at verification time, so it stays correct when the user changes the URL at runtime.
@@ -50,15 +57,16 @@ class Scraper(private val context: Context) {
             // (up to 16 at initial load) all run in true parallel rather than
             // queuing against the OkHttp default of 5 connections.
             .connectionPool(okhttp3.ConnectionPool(20, 5, java.util.concurrent.TimeUnit.MINUTES))
-            .sslSocketFactory(createInsecureSslSocketFactory(), createTrustAllManager())
-            .hostnameVerifier { hostname, _ ->
+            // The system trust store validates every certificate (no trust-all manager), and
+            // the hostname must both be the configured source and match its certificate.
+            .hostnameVerifier { hostname, session ->
                 val allowedHost = try {
                     java.net.URI(urlPreferences.getBaseUrl()).host ?: ""
                 } catch (_: Exception) { "" }
                 val allowed = allowedHost.isNotEmpty() &&
                     (hostname == allowedHost || hostname.endsWith(".$allowedHost"))
                 if (!allowed) Log.w("Scraper", "SSL hostname rejected: $hostname (expected $allowedHost)")
-                allowed
+                allowed && defaultHostnameVerifier.verify(hostname, session)
             }
             .build()
     }
@@ -93,6 +101,8 @@ class Scraper(private val context: Context) {
             \b(?:today|tomorrow|yesterday)\b
         """.trimIndent(), setOf(RegexOption.COMMENTS, RegexOption.IGNORE_CASE))
 
+        private const val MAX_RATE_LIMIT_RETRIES = 2
+
         val FOOTBALL_KEYWORDS: Set<String> = setOf(
             "football", "soccer", "premier", "liga", "bundesliga", "serie a",
             "ligue", "champions league", "europa league", "uefa", "fifa", "world cup"
@@ -122,13 +132,13 @@ class Scraper(private val context: Context) {
         limit: Int = 0,
         offset: Int = 0
     ): List<Match> = withContext(Dispatchers.IO) {
-        val url = urlPreferences.getBaseUrl()
+        val url = urlFor(section)
         val baseOrigin = baseOriginOf(url)
         Log.d("Scraper", "Fetching initial match list from: $url (section: ${section.displayName})")
         try {
             // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
             val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
-            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, limit, offset)
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, limit, offset, parseSourceOffsetMinutes(doc))
             Log.d("Scraper", "Successfully parsed ${result.size} matches from main page.")
             result
         } catch (e: Exception) {
@@ -143,13 +153,13 @@ class Scraper(private val context: Context) {
      * @param section The section to scrape from
      */
     suspend fun scrapeAllMatches(section: ScrapingSection = ScrapingSection.ALL): List<Match> = withContext(Dispatchers.IO) {
-        val url = urlPreferences.getBaseUrl()
+        val url = urlFor(section)
         val baseOrigin = baseOriginOf(url)
         Log.d("Scraper", "Background scraping ALL matches from: $url (section: ${section.displayName})")
         try {
             // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
             val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
-            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, 0, 0)
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, 0, 0, parseSourceOffsetMinutes(doc))
             Log.d("Scraper", "Background scraping completed: ${result.size} matches found")
             result
         } catch (e: Exception) {
@@ -163,6 +173,17 @@ class Scraper(private val context: Context) {
      * Previously this identical `when` block was inlined — and duplicated — in both
      * [scrapeMatchList] and [scrapeAllMatches].
      */
+    /** The page to read for a tab: the configured source, or its sibling page for a sport tab. */
+    private fun urlFor(section: ScrapingSection): String {
+        val base = urlPreferences.getBaseUrl()
+        val page = section.sportPage ?: return base
+        val pattern = Regex("""/allupcomingsports/\d+/""")
+        return if (pattern.containsMatchIn(base)) base.replace(pattern, "/allupcomingsports/$page/") else base
+    }
+
+    private fun parseSourceOffsetMinutes(doc: org.jsoup.nodes.Document): Int? =
+        SourceTimeZone.parseOffsetMinutes(doc.text())
+
     private fun sectionDocFor(
         doc: org.jsoup.nodes.Document,
         section: ScrapingSection
@@ -178,7 +199,9 @@ class Scraper(private val context: Context) {
                 doc
             }
         }
-        ScrapingSection.FOOTBALL -> {
+        // Football and the sport tabs: the page minus the mixed "top events" block, so only
+        // that sport's own schedule is left.
+        else -> {
             val copy = doc.clone()
             copy.select("#upcoming").remove()
             Log.d("Scraper", "Using document minus #upcoming for ${section.displayName} section")
@@ -199,7 +222,8 @@ class Scraper(private val context: Context) {
         section: ScrapingSection,
         baseOrigin: String,
         limit: Int = 0,
-        offset: Int = 0
+        offset: Int = 0,
+        sourceOffsetMin: Int? = null,
     ): List<Match> {
         // ── Link discovery ────────────────────────────────────────────────────
         var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
@@ -303,7 +327,7 @@ class Scraper(private val context: Context) {
             }
 
             if (teams.isNotBlank() && teams.length > 3) {
-                matches.add(Match(time, date, teams, competition, sport, league, detailPageUrl, country = country))
+                matches.add(Match(time, date, teams, competition, sport, league, detailPageUrl, country = country, sourceUtcOffsetMin = sourceOffsetMin))
             } else if (BuildConfig.DEBUG) {
                 Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
             }
@@ -325,7 +349,8 @@ class Scraper(private val context: Context) {
                 Log.d("Scraper", "Football filtering: ${uniqueMatches.size} -> ${footballMatches.size} matches")
                 footballMatches
             }
-            else -> uniqueMatches
+            // Sport tabs: the page is already that sport, so label every match with it.
+            else -> section.sportName?.let { name -> uniqueMatches.map { it.copy(sport = name) } } ?: uniqueMatches
         }
 
         // ── Pagination (limit = 0 means no limit) ─────────────────────────────
@@ -594,7 +619,8 @@ class Scraper(private val context: Context) {
         Log.d("Scraper", "Fetching stream links from: $detailPageUrl")
         
         try {
-            val html = fetchHtmlWithOkHttp(detailPageUrl)
+            // Only a few detail pages at a time, so the site is not flooded (and does not answer 429).
+            val html = detailFetchLimit.withPermit { fetchHtmlWithOkHttp(detailPageUrl) }
             val doc = Jsoup.parse(html, detailPageUrl)
             val links = mutableSetOf<String>()
 
@@ -893,38 +919,41 @@ class Scraper(private val context: Context) {
             .header("Cache-Control", "no-cache")
             .build()
 
-        scrapingClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                Log.e("Scraper", "HTTP error: ${response.code} - ${response.message}")
-                throw java.io.IOException("HTTP error: ${response.code}")
+        // The site answers 429 (or 503) when it is asked for too much at once. Wait as long as it
+        // says (capped) and try again a couple of times before giving up.
+        for (attempt in 0..MAX_RATE_LIMIT_RETRIES) {
+            val outcome = scrapingClient.newCall(request).execute().use { response ->
+                if (response.code == 429 || response.code == 503) {
+                    val waitMs = (response.header("Retry-After")?.trim()?.toLongOrNull()?.times(1000L)
+                        ?: (1_000L shl attempt)).coerceIn(500L, 8_000L)
+                    return@use FetchOutcome(null, waitMs)
+                }
+                if (!response.isSuccessful) {
+                    Log.e("Scraper", "HTTP error: ${response.code} - ${response.message}")
+                    throw java.io.IOException("HTTP error: ${response.code}")
+                }
+
+                val body = response.body
+                    ?: throw java.io.IOException("Empty response body")
+
+                val content = body.string()
+                if (BuildConfig.DEBUG) Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
+                // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
+                // URL can skip the network round-trip entirely.
+                htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())
+                FetchOutcome(content, 0L)
             }
-
-            val body = response.body
-                ?: throw java.io.IOException("Empty response body")
-
-            val content = body.string()
-            if (BuildConfig.DEBUG) Log.d("Scraper", "Response length: ${content.length} chars, first 200 chars: ${content.take(200)}")
-            // FIX #16: Populate the cache so a subsequent scrapeAllMatches() call for the same
-            // URL can skip the network round-trip entirely.
-            htmlCache = HtmlCacheEntry(url, content, System.currentTimeMillis())
-            content
+            outcome.html?.let { return@withContext it }
+            if (attempt < MAX_RATE_LIMIT_RETRIES) {
+                Log.d("Scraper", "Rate limited, retry ${attempt + 1} in ${outcome.retryAfterMs} ms: $url")
+                delay(outcome.retryAfterMs)
+            }
         }
+        Log.w("Scraper", "Still rate limited after $MAX_RATE_LIMIT_RETRIES retries: $url")
+        throw java.io.IOException("HTTP error: 429")
     }
 
-    private fun createInsecureSslSocketFactory(): javax.net.ssl.SSLSocketFactory {
-        val trustAllManager = createTrustAllManager()
-        val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
-        sslContext.init(null, arrayOf(trustAllManager), java.security.SecureRandom())
-        return sslContext.socketFactory
-    }
-
-    private fun createTrustAllManager(): javax.net.ssl.X509TrustManager {
-        return object : javax.net.ssl.X509TrustManager {
-            override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {}
-            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
-        }
-    }
+    private class FetchOutcome(val html: String?, val retryAfterMs: Long)
 
     // A private class that will act as the bridge between JavaScript and Kotlin
     private class WebAppInterface(private val onHtmlReady: (String) -> Unit) {

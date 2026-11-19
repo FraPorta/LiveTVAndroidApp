@@ -13,6 +13,8 @@ data class Match(
     val areLinksLoading: Boolean = false,
     val homeLogoUrl: String? = null,
     val awayLogoUrl: String? = null,
+    /** UTC offset (minutes) of the time zone the page shows kickoff times in; null when unknown. */
+    val sourceUtcOffsetMin: Int? = null,
 ) {
     /** Qualified league key aligned with TeamEntry.league, e.g. "England - Premier League". */
     val qualifiedLeagueKey: String get() =

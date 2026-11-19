@@ -132,7 +132,7 @@ class Scraper(private val context: Context) {
         try {
             // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
             val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
-            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, limit, offset)
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, limit, offset, parseSourceOffsetMinutes(doc))
             Log.d("Scraper", "Successfully parsed ${result.size} matches from main page.")
             result
         } catch (e: Exception) {
@@ -153,7 +153,7 @@ class Scraper(private val context: Context) {
         try {
             // FIX #20: Delegate to shared helper — no more duplicated parsing logic.
             val doc = Jsoup.parse(fetchHtmlWithOkHttp(url))
-            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, 0, 0)
+            val result = parseMatchRows(sectionDocFor(doc, section), section, baseOrigin, 0, 0, parseSourceOffsetMinutes(doc))
             Log.d("Scraper", "Background scraping completed: ${result.size} matches found")
             result
         } catch (e: Exception) {
@@ -167,6 +167,9 @@ class Scraper(private val context: Context) {
      * Previously this identical `when` block was inlined — and duplicated — in both
      * [scrapeMatchList] and [scrapeAllMatches].
      */
+    private fun parseSourceOffsetMinutes(doc: org.jsoup.nodes.Document): Int? =
+        SourceTimeZone.parseOffsetMinutes(doc.text())
+
     private fun sectionDocFor(
         doc: org.jsoup.nodes.Document,
         section: ScrapingSection
@@ -203,7 +206,8 @@ class Scraper(private val context: Context) {
         section: ScrapingSection,
         baseOrigin: String,
         limit: Int = 0,
-        offset: Int = 0
+        offset: Int = 0,
+        sourceOffsetMin: Int? = null,
     ): List<Match> {
         // ── Link discovery ────────────────────────────────────────────────────
         var detailLinks = sectionDoc.select("a[href*='/enx/event/']")
@@ -307,7 +311,7 @@ class Scraper(private val context: Context) {
             }
 
             if (teams.isNotBlank() && teams.length > 3) {
-                matches.add(Match(time, date, teams, competition, sport, league, detailPageUrl, country = country))
+                matches.add(Match(time, date, teams, competition, sport, league, detailPageUrl, country = country, sourceUtcOffsetMin = sourceOffsetMin))
             } else if (BuildConfig.DEBUG) {
                 Log.w("Scraper", "Skipped — teams too short/blank: '$teams'")
             }

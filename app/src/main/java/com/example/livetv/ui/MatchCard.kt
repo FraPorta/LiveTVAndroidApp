@@ -114,6 +114,7 @@ fun MatchCard(
     val source = remember { MutableInteractionSource() }
     val shape = MaterialTheme.shapes.medium
     val teams = remember(match.teams) { splitTeams(match.teams) }
+    val kickoff = remember(match) { MatchClock.displayTime(match, System.currentTimeMillis()) }
     val aceCount = match.streamLinks.count { isAcestreamLink(it) }
     val webCount = match.streamLinks.size - aceCount
 
@@ -156,7 +157,7 @@ fun MatchCard(
                 if (teams != null) {
                     TeamColumn(teams.first, match.qualifiedLeagueKey, match.homeLogoUrl, Modifier.weight(1f))
                     Text(
-                        text = match.time.trim().ifBlank { "TBD" },
+                        text = kickoff.ifBlank { "TBD" },
                         style = ScoreTimeStyle,
                         color = if (phase == MatchPhase.LIVE) LiveRed else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 6.dp),
@@ -171,7 +172,7 @@ fun MatchCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = match.time.trim(),
+                        text = kickoff,
                         style = ScoreTimeStyle,
                         modifier = Modifier.padding(start = 8.dp),
                     )

@@ -112,7 +112,11 @@ fun StreamPanelContent(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = listOf(match.date, match.time).filter { it.isNotBlank() }.joinToString(" · "),
+                    text = remember(match) {
+                        val now = System.currentTimeMillis()
+                        listOf(MatchClock.dayLabel(match, now), MatchClock.displayTime(match, now))
+                            .filter { it.isNotBlank() }.joinToString(" · ")
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = TextSecondary,
                 )

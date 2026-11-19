@@ -1,7 +1,12 @@
 package com.example.livetv.ui
 
 import com.example.livetv.data.model.Match
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.SimpleTimeZone
+import java.util.TimeZone
 
 enum class MatchPhase { LIVE, UPCOMING, FINISHED }
 
@@ -20,7 +25,10 @@ object MatchClock {
     /** Kickoff in epoch millis, or null when the date or time cannot be read. */
     fun startMillis(match: Match, now: Long): Long? {
         val t = TIME.find(match.time) ?: return null
-        val cal = Calendar.getInstance().apply { timeInMillis = now }
+        // The page's "Today" and kickoff times are in its own time zone, not necessarily the device's.
+        val zone = match.sourceUtcOffsetMin
+            ?.let { SimpleTimeZone(it * 60_000, "source") } ?: TimeZone.getDefault()
+        val cal = Calendar.getInstance(zone).apply { timeInMillis = now }
         val date = match.date.trim()
         when {
             date.isBlank() || date.equals("Today", true) -> Unit
@@ -55,7 +63,14 @@ object MatchClock {
         }
     }
 
-    /** Day section title: Today, Tomorrow, or the date as shown on the page. */
+    /** Kickoff time in the device's time zone; the page's own text when it cannot be converted. */
+    fun displayTime(match: Match, now: Long): String {
+        if (match.sourceUtcOffsetMin == null) return match.time.trim()
+        val start = startMillis(match, now) ?: return match.time.trim()
+        return SimpleDateFormat("HH:mm", Locale.ENGLISH).format(Date(start))
+    }
+
+    /** Day section title in the device's time zone: Today, Tomorrow, or the date. */
     fun dayLabel(match: Match, now: Long): String {
         val start = startMillis(match, now) ?: return match.date.ifBlank { "Other" }
         val a = Calendar.getInstance().apply { timeInMillis = now }
@@ -65,7 +80,7 @@ object MatchClock {
             0 -> "Today"
             1 -> "Tomorrow"
             -1 -> "Yesterday"
-            else -> match.date.ifBlank { "Other" }
+            else -> SimpleDateFormat("d MMM", Locale.ENGLISH).format(Date(start))
         }
     }
 }

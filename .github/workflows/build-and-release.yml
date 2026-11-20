@@ -97,6 +97,8 @@ jobs:
 
    - name: Auto-increment version
      if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+     env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
      run: |
       # Extract current version
       CURRENT_VERSION_NAME=$(grep -E "versionName\s*=" app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/')
@@ -108,9 +110,15 @@ jobs:
       MINOR=${VERSION_PARTS[1]}
       PATCH=${VERSION_PARTS[2]}
 
-      # Increment patch version
-      NEW_PATCH=$((PATCH + 1))
-      NEW_VERSION_NAME="$MAJOR.$MINOR.$NEW_PATCH"
+      # Increment the patch version, unless the version in build.gradle.kts has not been
+      # released yet. That lets a manual bump (e.g. to 1.1.0) be released exactly as written.
+      if gh release view "v$CURRENT_VERSION_NAME" >/dev/null 2>&1; then
+        NEW_PATCH=$((PATCH + 1))
+        NEW_VERSION_NAME="$MAJOR.$MINOR.$NEW_PATCH"
+      else
+        echo "v$CURRENT_VERSION_NAME has not been released yet, releasing it as written"
+        NEW_VERSION_NAME="$CURRENT_VERSION_NAME"
+      fi
       NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
 
       echo "Current version: $CURRENT_VERSION_NAME (code: $CURRENT_VERSION_CODE)"

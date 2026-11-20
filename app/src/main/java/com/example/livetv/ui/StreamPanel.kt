@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.example.livetv.data.local.LastStreamPreferences
 import com.example.livetv.data.local.TeamMatcher
 import com.example.livetv.data.model.Match
+import com.example.livetv.data.network.AcestreamLinks
 import com.example.livetv.ui.theme.Accent
 import com.example.livetv.ui.theme.CardRaised
 import com.example.livetv.ui.theme.FavouriteGold
@@ -211,7 +212,8 @@ fun StreamPanelContent(
                         onClick = {
                             lastPrefs.set(match.detailPageUrl, s.link)
                             lastUsed = s.link
-                            openUrlWithChooser(context, s.link)
+                            // Use the Acestream address set now, not the one the link was scraped with.
+                            openUrlWithChooser(context, AcestreamLinks.withIp(s.link, viewModel.getAcestreamIp()))
                         },
                     )
                 }

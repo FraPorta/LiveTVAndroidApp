@@ -706,8 +706,7 @@ class Scraper(private val context: Context) {
             val transformedLinks = allLinks.map { link ->
                 if (link.startsWith("acestream://")) {
                     val acestreamId = link.removePrefix("acestream://")
-                    val acestreamIp = getAcestreamIp()
-                    val httpProxyUrl = "http://$acestreamIp:6878/ace/getstream?id=$acestreamId"
+                    val httpProxyUrl = AcestreamLinks.proxyUrl(getAcestreamIp(), acestreamId)
                     Log.d("Scraper", "Transformed acestream link: $link -> $httpProxyUrl")
                     httpProxyUrl
                 } else {

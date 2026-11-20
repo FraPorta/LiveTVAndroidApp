@@ -6,13 +6,21 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.example.livetv.ui.theme.FocusColor
+
+/**
+ * False while something sits on top of the page (the TV stream panel), so the D-pad cannot reach
+ * the tabs and cards behind it. Read by [tvFocus], which every focusable control uses.
+ */
+val LocalFocusEnabled = compositionLocalOf { true }
 
 /**
  * The one D-pad focus style used everywhere: the focused item grows slightly, gets a
@@ -30,7 +38,9 @@ fun Modifier.tvFocus(
         animationSpec = tween(150),
         label         = "focusScale",
     )
+    val enabled = LocalFocusEnabled.current
     return this
+        .focusProperties { canFocus = enabled }
         .zIndex(if (focused) 1f else 0f)
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .then(if (focused) Modifier.border(2.dp, FocusColor, shape) else Modifier)

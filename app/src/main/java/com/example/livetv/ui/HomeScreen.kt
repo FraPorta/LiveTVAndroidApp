@@ -47,6 +47,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -54,6 +55,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -112,9 +114,22 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
     var lastShown by remember { mutableStateOf<Match?>(null) }
     LaunchedEffect(selectedMatch) { if (selectedMatch != null) lastShown = selectedMatch }
 
+    // The card to give focus back to when the panel closes. It is kept after the panel closes so
+    // the card still carries the focus requester at that point.
+    var focusReturnUrl by remember { mutableStateOf<String?>(null) }
+    var restoreFocus by remember { mutableStateOf(false) }
+
     fun closePanel() {
         selectedUrl = null
-        try { returnFocus.requestFocus() } catch (_: Exception) {}
+        restoreFocus = true
+    }
+    LaunchedEffect(restoreFocus) {
+        if (restoreFocus) {
+            // Wait a frame so the page is back in the focus order before asking for focus.
+            withFrameNanos { }
+            try { returnFocus.requestFocus() } catch (_: Exception) {}
+            restoreFocus = false
+        }
     }
 
     // Re-evaluate live / finished once a minute
@@ -187,6 +202,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                 } else false
             },
     ) {
+        // While the stream panel is open on TV, the page behind it leaves the focus order so the
+        // D-pad stays in the panel (see LocalFocusEnabled). Never set canFocus = true on a
+        // container: the grid then took focus itself and pressing down from the tabs highlighted
+        // nothing until OK was pressed.
+        CompositionLocalProvider(LocalFocusEnabled provides !(selectedUrl != null && !isCompactScreen)) {
         Column(Modifier.fillMaxSize()) {
             TopBar(
                 compact = isCompactScreen,
@@ -248,9 +268,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                     else -> LazyVerticalGrid(
                         columns = GridCells.Adaptive(minCard.dp),
                         state = gridState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .focusProperties { canFocus = selectedUrl == null },
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             horizontal = if (isCompactScreen) 16.dp else 32.dp,
                             vertical = 8.dp,
@@ -277,8 +295,11 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
                                     match = item.match,
                                     phase = item.phase,
                                     isFavourite = item.match.detailPageUrl in favouriteMatchUrls,
-                                    onClick = { selectedUrl = item.match.detailPageUrl },
-                                    focusRequester = if (item.match.detailPageUrl == selectedUrl) returnFocus else null,
+                                    onClick = {
+                                        selectedUrl = item.match.detailPageUrl
+                                        focusReturnUrl = item.match.detailPageUrl
+                                    },
+                                    focusRequester = if (item.match.detailPageUrl == focusReturnUrl) returnFocus else null,
                                 )
                             }
                         }
@@ -302,6 +323,7 @@ fun HomeScreen(viewModel: MatchViewModel = viewModel()) {
             } else {
                 Box(Modifier.weight(1f).onFocusChanged { gridAreaHasFocus = it.hasFocus }) { contentArea() }
             }
+        }
         }
 
         // ── Streams: side panel on TV / tablet, bottom sheet on phones ──────────

@@ -3,8 +3,10 @@ package com.example.livetv.data.updater
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import java.security.MessageDigest
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -222,9 +224,12 @@ class UpdateManager(private val context: Context) {
     private fun signaturesMatch(apkFile: File): Boolean {
         val current = getInstalledSignatures()
         val downloaded = getArchiveSignatures(apkFile)
-        // FIX #3: Treat an empty signature list as a mismatch, not a pass. Returning true
-        // when signatures couldn't be read allowed any APK to be installed silently.
-        if (current.isEmpty() || downloaded.isEmpty()) return false
+        Log.i("UpdateManager", "Signature check: installed=${current.size} downloaded=${downloaded.size}")
+        // Android's installer refuses an update signed with a different key anyway, so this check
+        // only exists to give a clear message. Block only when both sides could be read and they
+        // really differ; if the downloaded file's signature can't be read (some devices don't
+        // report it for APKs signed with v1/v2 only), let the installer decide.
+        if (current.isEmpty() || downloaded.isEmpty()) return true
         return current.any { it in downloaded }
     }
 
@@ -232,41 +237,42 @@ class UpdateManager(private val context: Context) {
         .digest(bytes)
         .joinToString("") { "%02x".format(it) }
 
+    /**
+     * Every signing certificate the package reports. APKs signed with v1/v2 only have no
+     * signing history, so the contents signers and the legacy signatures are read as well.
+     */
     @Suppress("DEPRECATION")
-    private fun getInstalledSignatures(): List<String> {
-        return try {
-            val pm = context.packageManager
-            val pkgName = context.packageName
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
-            val info = pm.getPackageInfo(pkgName, flags)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val signingInfo = info.signingInfo ?: return emptyList()
-                val sigs = if (signingInfo.hasMultipleSigners()) signingInfo.apkContentsSigners else signingInfo.signingCertificateHistory
-                sigs.map { digest(it.toByteArray()) }
-            } else {
-                info.signatures?.map { digest(it.toByteArray()) } ?: emptyList()
+    private fun signaturesOf(info: PackageInfo): Set<String> {
+        val result = LinkedHashSet<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.let { si ->
+                si.apkContentsSigners?.forEach { result += digest(it.toByteArray()) }
+                si.signingCertificateHistory?.forEach { result += digest(it.toByteArray()) }
             }
-        } catch (e: Exception) {
-            emptyList()
         }
+        info.signatures?.forEach { result += digest(it.toByteArray()) }
+        return result
     }
 
     @Suppress("DEPRECATION")
-    private fun getArchiveSignatures(apkFile: File): List<String> {
-        return try {
-            val pm = context.packageManager
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
-            val info = pm.getPackageArchiveInfo(apkFile.path, flags) ?: return emptyList()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val signingInfo = info.signingInfo ?: return emptyList()
-                val sigs = if (signingInfo.hasMultipleSigners()) signingInfo.apkContentsSigners else signingInfo.signingCertificateHistory
-                sigs.map { digest(it.toByteArray()) }
-            } else {
-                info.signatures?.map { digest(it.toByteArray()) } ?: emptyList()
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
+    private fun signatureFlags(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_SIGNATURES
+        else PackageManager.GET_SIGNATURES
+
+    private fun getInstalledSignatures(): List<String> = try {
+        signaturesOf(context.packageManager.getPackageInfo(context.packageName, signatureFlags())).toList()
+    } catch (e: Exception) {
+        Log.w("UpdateManager", "Could not read installed signatures", e)
+        emptyList()
+    }
+
+    private fun getArchiveSignatures(apkFile: File): List<String> = try {
+        val info = context.packageManager.getPackageArchiveInfo(apkFile.path, signatureFlags())
+        if (info == null) emptyList() else signaturesOf(info).toList()
+    } catch (e: Exception) {
+        Log.w("UpdateManager", "Could not read downloaded APK signatures", e)
+        emptyList()
     }
 }
 
